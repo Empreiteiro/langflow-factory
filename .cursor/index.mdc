@@ -1,0 +1,89 @@
+# Factory Custom Components - Cursor Rules
+
+## Project Overview
+- **Purpose**: Custom Langflow components for extended functionality
+- **Stack**: Python, Langflow framework, various APIs (Evolution, Google, Notion, etc.)
+- **Architecture**: Component-based with standardized input/output patterns
+
+## Coding Standards
+
+### Python Specifics
+- Use Pydantic models for data validation
+- Follow Langflow component patterns with CustomComponent base class
+- Implement proper error handling with `self.log()` method
+- Use type hints for all parameters and return values
+- Prefer functional programming for data processing
+
+### Component Development Rules
+- All components must inherit from CustomComponent
+- Use `@component` decorator with proper metadata
+- Implement `build_config()` for input configuration
+- Use `self.log()` for logging instead of Python's logging module
+- Follow USER_ID/FILE_ID.FILE_EXTENSION format for file paths
+
+### Error Handling
+- Always use `self.log()` for error logging
+- Raise specific exceptions with clear messages
+- Handle API failures gracefully with fallback responses
+- Validate inputs before processing
+
+### Data Processing
+- Use DataFrame for tabular data outputs
+- Implement proper file path resolution with `resolve_path()`
+- Process multiple files efficiently in batch operations
+- Maintain consistent data structure across components
+
+## Component Patterns
+
+### Input Types
+- Use appropriate Langflow input types (FileInput, BoolInput, DropdownInput, etc.)
+- Implement real_time_refresh for dynamic UI updates
+- Use multiline=True for text inputs when needed
+
+### Output Types
+- DataFrame for tabular data
+- Message for text content
+- Data for complex objects
+- Implement multiple outputs when component serves different purposes
+
+### File Processing
+- Support multiple file formats where applicable
+- Implement progress tracking for long operations
+- Use proper encoding detection for text files
+- Handle binary files appropriately
+
+## API Integration Guidelines
+
+### Authentication
+- Store API keys in component inputs
+- Implement proper credential handling
+- Use environment variables for development
+- Validate credentials before making requests
+
+### Rate Limiting
+- Implement exponential backoff for API calls
+- Handle rate limit responses gracefully
+- Log API usage for debugging
+
+### Response Handling
+- Parse API responses consistently
+- Handle pagination when needed
+- Implement proper error responses for failed calls
+
+## Documentation Requirements
+- Include docstrings for all public methods
+- Provide clear component descriptions
+- Document input/output formats
+- Include usage examples in comments
+
+## Testing Practices
+- Create test files in `/tests` directory
+- Test both success and failure scenarios
+- Mock external API calls
+- Validate component outputs
+
+## File Organization
+- Group related components in subdirectories
+- Use descriptive file names
+- Keep component files focused on single responsibility
+- Separate utility functions when reusable

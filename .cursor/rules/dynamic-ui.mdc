@@ -1,0 +1,469 @@
+# Guide: Dynamic Output with Table Input
+
+## Overview
+
+Dynamic output in Langflow components can be significantly affected by changing the number of rows in a `TableInput`. This behavior allows components to automatically adapt to data volume, showing relevant outputs based on the amount of available information.
+
+## How It Works
+
+### 1. `update_outputs` Method
+
+The `update_outputs` method is the key to implementing dynamic output. It is automatically called when a field with `real_time_refresh=True` is modified.
+
+```python
+def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+    """Updates outputs dynamically based on the number of rows in the table input."""
+    if field_name == "data_table":
+        # Gets the number of rows in the table
+        row_count = len(field_value) if field_value else 0
+        
+        # Clears existing outputs
+        frontend_node["outputs"] = []
+        
+        # Adds outputs based on the number of rows
+        if row_count == 0:
+            # No rows - shows only warning
+            frontend_node["outputs"].append(
+                Output(display_name="Warning", name="warning", method="show_warning")
+            )
+        elif row_count == 1:
+            # One row - shows item details
+            frontend_node["outputs"].append(
+                Output(display_name="Item Details", name="item_details", method="show_item_details")
+            )
+        # ... more conditions
+        
+    return frontend_node
+```
+
+### 2. TableInput Configuration
+
+For dynamic output to work, the `TableInput` must have `real_time_refresh=True`:
+
+```python
+TableInput(
+    name="data_table",
+    display_name="Data Table",
+    info="Add or remove rows to see how outputs change dynamically.",
+    table_schema=[...],
+    value=[...],
+    real_time_refresh=True,  # Important!
+),
+```
+
+## Dynamic Output Strategies
+
+### 1. Based on Number of Rows
+
+| Number of Rows | Suggested Outputs | Justification |
+|----------------|------------------|---------------|
+| 0 | Warning | No data to process |
+| 1 | Item Details | Specific information for the single item |
+| 2-5 | Summary + Basic Statistics | Simple analysis suitable for the volume |
+| 6-10 | Summary + Advanced Statistics + Category Analysis | More detailed analysis |
+| 10+ | All available outputs | Complete analysis and reports |
+
+### 2. Based on Data Type
+
+```python
+def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+    if field_name == "data_table":
+        # Analyzes the type of data in rows
+        has_numeric_data = any(
+            str(item.get("value", "")).isdigit() 
+            for item in field_value
+        )
+        
+        if has_numeric_data:
+            frontend_node["outputs"].append(
+                Output(display_name="Statistics", name="stats", method="generate_stats")
+            )
+        else:
+            frontend_node["outputs"].append(
+                Output(display_name="Text Analysis", name="text_analysis", method="analyze_text")
+            )
+    
+    return frontend_node
+```
+
+### 3. Based on Data Complexity
+
+```python
+def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+    if field_name == "data_table":
+        # Counts unique categories
+        categories = set(item.get("category", "") for item in field_value)
+        
+        if len(categories) > 3:
+            frontend_node["outputs"].append(
+                Output(display_name="Category Analysis", name="category_analysis", method="analyze_categories")
+            )
+        
+        # Checks if there are numeric values
+        numeric_values = [item for item in field_value if str(item.get("value", "")).isdigit()]
+        if len(numeric_values) > 5:
+            frontend_node["outputs"].append(
+                Output(display_name="Statistical Analysis", name="statistical_analysis", method="analyze_statistics")
+            )
+    
+    return frontend_node
+```
+
+## Practical Examples
+
+### Example 1: Sales Analysis Component
+
+```python
+class SalesAnalysisComponent(Component):
+    inputs = [
+        TableInput(
+            name="sales_data",
+            display_name="Sales Data",
+            table_schema=[
+                {"name": "product", "display_name": "Product", "type": "str"},
+                {"name": "quantity", "display_name": "Quantity", "type": "str"},
+                {"name": "price", "display_name": "Price", "type": "str"},
+                {"name": "category", "display_name": "Category", "type": "str"},
+            ],
+            real_time_refresh=True,
+        )
+    ]
+    
+    def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+        if field_name == "sales_data":
+            row_count = len(field_value) if field_value else 0
+            
+            frontend_node["outputs"] = []
+            
+            # Always shows processed data
+            frontend_node["outputs"].append(
+                Output(display_name="Processed Data", name="processed_data", method="process_data")
+            )
+            
+            if row_count == 0:
+                frontend_node["outputs"].append(
+                    Output(display_name="Warning", name="warning", method="show_warning")
+                )
+            elif row_count <= 10:
+                frontend_node["outputs"].append(
+                    Output(display_name="Sales Summary", name="sales_summary", method="generate_summary")
+                )
+            else:
+                frontend_node["outputs"].append(
+                    Output(display_name="Sales Summary", name="sales_summary", method="generate_summary")
+                )
+                frontend_node["outputs"].append(
+                    Output(display_name="Category Analysis", name="category_analysis", method="analyze_categories")
+                )
+                frontend_node["outputs"].append(
+                    Output(display_name="Top Products", name="top_products", method="get_top_products")
+                )
+                frontend_node["outputs"].append(
+                    Output(display_name="Full Report", name="full_report", method="generate_full_report")
+                )
+        
+        return frontend_node
+```
+
+### Example 2: Data Processing Component
+
+```python
+class DataProcessorComponent(Component):
+    inputs = [
+        TableInput(
+            name="input_data",
+            display_name="Input Data",
+            table_schema=[
+                {"name": "id", "display_name": "ID", "type": "str"},
+                {"name": "value", "display_name": "Value", "type": "str"},
+                {"name": "type", "display_name": "Type", "type": "str"},
+            ],
+            real_time_refresh=True,
+        )
+    ]
+    
+    def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+        if field_name == "input_data":
+            row_count = len(field_value) if field_value else 0
+            
+            frontend_node["outputs"] = []
+            
+            # Always shows processed data
+            frontend_node["outputs"].append(
+                Output(display_name="Processed Data", name="processed_data", method="process_data")
+            )
+            
+            # Adds outputs based on quantity and type of data
+            if row_count > 0:
+                # Checks if there's numeric data
+                has_numeric = any(
+                    str(item.get("value", "")).isdigit() 
+                    for item in field_value
+                )
+                
+                if has_numeric:
+                    frontend_node["outputs"].append(
+                        Output(display_name="Statistics", name="statistics", method="calculate_statistics")
+                    )
+                
+                # Checks if there are different types
+                types = set(item.get("type", "") for item in field_value)
+                if len(types) > 1:
+                    frontend_node["outputs"].append(
+                        Output(display_name="Type Analysis", name="type_analysis", method="analyze_by_type")
+                    )
+                
+                # For large volumes, adds advanced analysis
+                if row_count > 50:
+                    frontend_node["outputs"].append(
+                        Output(display_name="Advanced Analysis", name="advanced_analysis", method="advanced_analysis")
+                    )
+        
+        return frontend_node
+```
+
+## Benefits of Dynamic Output
+
+### 1. Improved User Experience
+- Clean and relevant interface
+- Appropriate outputs for data volume
+- Reduced confusion with unnecessary outputs
+
+### 2. Optimized Performance
+- Processing only necessary data
+- Reduced computational load
+- Faster response
+
+### 3. Flexibility
+- Automatic adaptation to context
+- Scalability with data volume
+- Simplified maintenance
+
+## Important Considerations
+
+### 1. Performance
+- Avoid unnecessary processing on large volumes
+- Consider pagination for very large datasets
+- Implement caching when appropriate
+
+### 2. Usability
+- Keep outputs consistent when possible
+- Provide clear feedback about changes
+- Document expected behavior
+
+### 3. Maintainability
+- Use constants for thresholds
+- Keep output logic organized
+- Test different data scenarios
+
+## Advanced Challenges and Solutions
+
+### 1. Problem: Dynamic Methods and Type Identification
+
+**Challenge**: When you create outputs dynamically with methods that don't exist statically in the class, Langflow cannot identify the return type of the outputs.
+
+**Problematic Example**:
+```python
+def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+    for i, row in enumerate(field_value):
+        frontend_node["outputs"].append(
+            Output(
+                display_name=row.get("label", f"Case {i+1}"),
+                name=f"case_{i+1}_result",
+                method=f"process_case_{i+1}",  # ❌ Method doesn't exist statically
+                group_outputs=True
+            )
+        )
+```
+
+**Solution**: Use a single static method that handles internal routing:
+
+```python
+def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+    for i, row in enumerate(field_value):
+        frontend_node["outputs"].append(
+            Output(
+                display_name=row.get("label", f"Case {i+1}"),
+                name=f"case_{i+1}_result",
+                method="process_case",  # ✅ Single static method
+                group_outputs=True
+            )
+        )
+
+def process_case(self) -> Message:
+    """Single method that processes all cases and stops unused outputs."""
+    cases = getattr(self, "cases", [])
+    # Logic to determine which case should be active
+    # Use self.stop() to stop unused outputs
+    for i in range(len(cases)):
+        if i != matched_case:
+            self.stop(f"case_{i+1}_result")
+    
+    return message_for_matched_case
+```
+
+### 2. Output Control with self.stop()
+
+**Concept**: Use `self.stop(output_name)` to control which outputs remain active during execution.
+
+```python
+def process_case(self) -> Message:
+    # Find the matching case
+    matched_case = None
+    for i, case in enumerate(cases):
+        if self.evaluate_condition(input_text, case_value, operator, case_sensitive):
+            matched_case = i
+            break
+    
+    if matched_case is not None:
+        # Stop all other cases
+        for i in range(len(cases)):
+            if i != matched_case:
+                self.stop(f"case_{i+1}_result")
+        
+        # Also stop the default output
+        self.stop("default_result")
+        
+        return self.message  # Return only for the active case
+    else:
+        # Stop all cases, leave only default active
+        for i in range(len(cases)):
+            self.stop(f"case_{i+1}_result")
+        
+        self.stop("process_case")  # Stop this method
+        return Message(text="")  # Default will be active
+```
+
+### 3. Synchronization Between Methods
+
+**Problem**: When you have multiple methods that need the same logic (like `process_case` and `default_response`).
+
+**Solution**: Share evaluation logic:
+
+```python
+def default_response(self) -> Message:
+    """Check if any case would match, if so, stop this output."""
+    cases = getattr(self, "cases", [])
+    
+    # Use the same logic as process_case
+    has_match = False
+    for case in cases:
+        match_value = case.get("value", "")
+        if match_value and self.evaluate_condition(input_text, match_value, operator, case_sensitive):
+            has_match = True
+            break
+    
+    if has_match:
+        self.stop("default_result")  # Stop this output
+        return Message(text="")
+    else:
+        return self.message  # This is the active output
+```
+
+### 4. Complete Example: Conditional Router
+
+```python
+class ConditionalRouterComponent(Component):
+    inputs = [
+        TableInput(
+            name="cases",
+            display_name="Cases",
+            table_schema=[
+                {"name": "label", "display_name": "Label", "type": "str"},
+                {"name": "value", "display_name": "Value", "type": "str"},
+            ],
+            real_time_refresh=True,  # Important for dynamic output
+        ),
+        DropdownInput(
+            name="operator",
+            display_name="Operator",
+            options=["equals", "contains", "starts with", "ends with"],
+        ),
+        MessageInput(name="message", display_name="Message"),
+    ]
+
+    def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+        if field_name == "cases":
+            frontend_node["outputs"] = []
+            
+            # Add one output for each case
+            for i, row in enumerate(field_value):
+                label = row.get("label", f"Case {i+1}")
+                frontend_node["outputs"].append(
+                    Output(
+                        display_name=label,
+                        name=f"case_{i+1}_result",
+                        method="process_case",  # Single method
+                        group_outputs=True
+                    )
+                )
+            
+            # Always add default output
+            frontend_node["outputs"].append(
+                Output(display_name="Else", name="default_result", method="default_response", group_outputs=True)
+            )
+        
+        return frontend_node
+
+    def process_case(self) -> Message:
+        """Process all cases and activate only the one that matches."""
+        cases = getattr(self, "cases", [])
+        input_text = getattr(self, "input_text", "")
+        operator = getattr(self, "operator", "equals")
+        message = getattr(self, "message", Message(text=""))
+        
+        matched_case = None
+        for i, case in enumerate(cases):
+            match_value = case.get("value", "")
+            if match_value and self.evaluate_condition(input_text, match_value, operator):
+                matched_case = i
+                break
+        
+        if matched_case is not None:
+            # Stop all other outputs
+            for i in range(len(cases)):
+                if i != matched_case:
+                    self.stop(f"case_{i+1}_result")
+            self.stop("default_result")
+            
+            self.status = f"Matched {cases[matched_case].get('label', f'Case {matched_case+1}')}"
+            return message
+        else:
+            # Stop all case outputs
+            for i in range(len(cases)):
+                self.stop(f"case_{i+1}_result")
+            self.stop("process_case")
+            return Message(text="")
+
+    def default_response(self) -> Message:
+        """Active only when no case matches."""
+        cases = getattr(self, "cases", [])
+        input_text = getattr(self, "input_text", "")
+        operator = getattr(self, "operator", "equals")
+        message = getattr(self, "message", Message(text=""))
+        
+        # Check if any case would match
+        for case in cases:
+            match_value = case.get("value", "")
+            if match_value and self.evaluate_condition(input_text, match_value, operator):
+                self.stop("default_result")
+                return Message(text="")
+        
+        # No case matched
+        self.status = "Routed to Else (no match)"
+        return message
+```
+
+### 5. Best Practices for Dynamic Outputs
+
+1. **Use static methods**: Avoid creating method names dynamically
+2. **Implement control with stop()**: To ensure only one output is active
+3. **Synchronize logic**: Between different methods that make similar evaluations
+4. **Add informative logs**: To debug output behavior
+5. **Test edge cases**: Like empty lists or invalid values
+
+## Conclusion
+
+Dynamic output based on table input is a powerful functionality that allows creating more intelligent and responsive components. By implementing the `update_outputs` method and configuring `real_time_refresh=True`, you can create significantly better user experiences that automatically adapt to data context.
+
+The learnings from developing the Conditional Router show that complex dynamic outputs require special attention to method design and flow control, but when well implemented, they provide extremely flexible and powerful functionalities. 

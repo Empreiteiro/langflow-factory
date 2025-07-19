@@ -1,0 +1,141 @@
+# Langflow Flow Development Rules
+
+## Flow Creation Standards
+
+### Requirements Analysis
+- Fully understand user requirements before creating flows
+- Define input/output specifications clearly
+- Identify all dependencies and integrations needed
+- Plan component connections and data flow
+
+### Naming Conventions
+- Use camelCase for variable names and field identifiers
+- Use PascalCase for component names and class definitions
+- Ensure all names are descriptive and self-explanatory
+- Use consistent naming across the entire flow
+
+### Flow Structure Guidelines
+- Design flows to be modular and reusable
+- Minimize complexity while maximizing functionality
+- Create logical, organized flow structures
+- Ensure smooth data transitions between components
+- Follow single responsibility principle for each flow section
+
+### Documentation Requirements
+- Add concise comments explaining flow purpose
+- Document expected inputs and outputs
+- Include error handling descriptions
+- Ensure all fields and comments are in English
+- Provide usage examples where helpful
+
+### Component Integration
+- Integrate components seamlessly with proper data types
+- Maintain data consistency across all flow steps
+- Use appropriate connection types (Data, Message, DataFrame)
+- Validate data transformations between components
+- Handle edge cases in component connections
+
+### Error Handling in Flows
+- Implement robust error handling at flow level
+- Use conditional routers for error paths
+- Provide meaningful error messages to users
+- Include fallback mechanisms where possible
+- Log errors appropriately for debugging
+
+### Performance Optimization
+- Design flows for efficiency and resource optimization
+- Avoid unnecessary data transformations
+- Use parallel processing where applicable
+- Minimize memory usage in large data flows
+- Implement proper caching strategies
+
+### Testing and Validation
+- Test complete flows end-to-end
+- Validate all component connections
+- Test error scenarios and edge cases
+- Ensure flows meet functional requirements
+- Verify performance under expected load
+
+### Production Readiness
+- Ensure flows are deployment-ready
+- Optimize for production environments
+- Include proper monitoring and logging
+- Implement security best practices
+- Document deployment requirements
+
+## Flow JSON Structure
+
+### Standard Flow Template
+```json
+{
+  "id": "unique-flow-id",
+  "data": {
+    "nodes": [
+      {
+        "id": "component-id",
+        "type": "CustomComponent",
+        "position": {"x": 100, "y": 100},
+        "data": {
+          "node": {
+            "template": {
+              "input_field": {
+                "value": "default_value"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-id",
+        "source": "source-node-id",
+        "target": "target-node-id",
+        "sourceHandle": "output_name",
+        "targetHandle": "input_name"
+      }
+    ]
+  }
+}
+```
+
+### Component Connection Rules
+- Always specify correct sourceHandle and targetHandle
+- Ensure data type compatibility between connected components
+- Use descriptive IDs for nodes and edges
+- Position components logically in the flow layout
+- Group related components visually
+
+### Flow Validation Checklist
+- [ ] All required inputs have default values or connections
+- [ ] Error handling paths are implemented
+- [ ] Component types match expected functionality
+- [ ] Data flows follow logical sequence
+- [ ] No circular dependencies exist
+- [ ] All outputs are properly utilized or connected
+
+## Common Flow Patterns
+
+### Data Processing Pattern
+1. Input → Validation → Processing → Output
+2. Include error handling at each step
+3. Log processing steps for debugging
+4. Return structured results
+
+### API Integration Pattern
+1. Authentication → Request → Response Handling → Output
+2. Implement retry logic for failed requests
+3. Handle rate limiting appropriately
+4. Parse and validate API responses
+
+### File Processing Pattern
+1. File Input → Validation → Processing → Results → Export
+2. Support multiple file formats
+3. Handle large files efficiently
+4. Provide progress feedback
+
+### Conditional Routing Pattern
+1. Input → Condition Check → Route A/B → Process → Merge Results
+2. Use routers for decision points
+3. Handle all possible paths
+4. Provide default routing options
