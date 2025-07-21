@@ -1,0 +1,10 @@
+[{"id":1,"first_name":"Jerrome","last_name":"Romney","email":"jromney0@homestead.com","gender":"Male","favorite_color":"Pink","car_brand":"Lexus","target":true,"native_language":"Indonesian"},
+{"id":2,"first_name":"Jourdan","last_name":"Dwane","email":"jdwane1@chron.com","gender":"Female","favorite_color":"Indigo","car_brand":"Nissan","target":true,"native_language":"Divehi"},
+{"id":3,"first_name":"Ciel","last_name":"Duxbarry","email":"cduxbarry2@godaddy.com","gender":"Agender","favorite_color":"Crimson","car_brand":"Toyota","target":false,"native_language":"Pali"},
+{"id":4,"first_name":"Humfrey","last_name":"Fallows","email":"hfallows3@edublogs.org","gender":"Male","favorite_color":"Fuscia","car_brand":"BMW","target":false,"native_language":"Bengali"},
+{"id":5,"first_name":"Rodolphe","last_name":"Greenhow","email":"rgreenhow4@sfgate.com","gender":"Male","favorite_color":"Turquoise","car_brand":"Buick","target":true,"native_language":"Finnish"},
+{"id":6,"first_name":"Andrea","last_name":"Brandham","email":"abrandham5@blinklist.com","gender":"Male","favorite_color":"Mauv","car_brand":"Lincoln","target":true,"native_language":"Sundanese"},
+{"id":7,"first_name":"Karon","last_name":"Edmundson","email":"kedmundson6@time.com","gender":"Female","favorite_color":"Mauv","car_brand":"Cadillac","target":true,"native_language":"Twi"},
+{"id":8,"first_name":"Sileas","last_name":"Wattins","email":"swattins7@yale.edu","gender":"Female","favorite_color":"Fuscia","car_brand":"Mazda","target":false,"native_language":"Panjabi"},
+{"id":9,"first_name":"Saunders","last_name":"Aggett","email":"saggett8@si.edu","gender":"Male","favorite_color":"Crimson","car_brand":"GMC","target":false,"native_language":"Kalaallisut"},
+{"id":10,"first_name":"Clare","last_name":"Itzcovichch","email":"citzcovichch9@reverbnation.com","gender":"Genderfluid","favorite_color":"Turquoise","car_brand":"Porsche","target":true,"native_language":"Luxembourgish"}]

@@ -1,0 +1,30 @@
+{
+  "São Paulo": [
+    {
+      "id": "1",
+      "name": "Alice",
+      "age": "30",
+      "city": "São Paulo"
+    },
+    {
+      "id": "3",
+      "name": "Carla",
+      "age": "28",
+      "city": "São Paulo"
+    }
+  ],
+  "Rio de Janeiro": [
+    {
+      "id": "2",
+      "name": "Bruno",
+      "age": "25",
+      "city": "Rio de Janeiro"
+    },
+    {
+      "id": "4",
+      "name": "Daniel",
+      "age": "35",
+      "city": "Rio de Janeiro"
+    }
+  ]
+}
