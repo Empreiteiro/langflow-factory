@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import StrInput, DropdownInput, SecretStrInput, Output
+from langflow.io import StrInput, DropdownInput, SecretStrInput, Output, MessageTextInput
 from langflow.schema import Data
 from langflow.schema.message import Message
 import base64
@@ -18,7 +18,7 @@ class OpenAITTS(Component):
             info="Your OpenAI API Key.",
             required=True
         ),
-        StrInput(
+        MessageTextInput(
             name="text",
             display_name="Text to Synthesize",
             info="Text that will be converted to speech.",
@@ -37,6 +37,13 @@ class OpenAITTS(Component):
             info="Select audio format.",
             options=["mp3", "opus", "aac", "flac", "wav", "pcm"],
             value="mp3"
+        ),
+        DropdownInput(
+            name="speed",
+            display_name="Speed",
+            info="Speed of the generated audio. Values range from 0.25 to 4.0.",
+            options=["0.25", "0.5", "0.75", "1.0", "1.25", "1.5", "1.75", "2.0", "2.5", "3.0", "3.5", "4.0"],
+            value="1.0"
         )
     ]
 
@@ -64,7 +71,13 @@ class OpenAITTS(Component):
         if not self.api_key:
             return {"error": "OpenAI API key is required."}
         
-        if not self.text or not self.text.strip():
+        # Handle MessageTextInput format
+        if hasattr(self.text, 'text'):
+            text_content = self.text.text
+        else:
+            text_content = str(self.text)
+        
+        if not text_content or not text_content.strip():
             return {"error": "Text input is required."}
 
         # Get API key value
@@ -75,9 +88,10 @@ class OpenAITTS(Component):
             return {"error": "A valid OpenAI API key is required."}
 
         # Prepare request
-        text = self.text.strip()
+        text = text_content.strip()
         voice = getattr(self, 'voice', 'alloy') or 'alloy'
         format_ = getattr(self, 'format', 'mp3') or 'mp3'
+        speed = getattr(self, 'speed', '1.0') or '1.0'
 
         url = "https://api.openai.com/v1/audio/speech"
         headers = {
@@ -88,12 +102,13 @@ class OpenAITTS(Component):
             "model": "tts-1",
             "input": text,
             "voice": voice,
-            "response_format": format_
+            "response_format": format_,
+            "speed": float(speed)
         }
 
         try:
-            self.status = f"Generating audio with voice '{voice}' in '{format_}' format..."
-            self.log(f"Making TTS request with voice: {voice}, format: {format_}")
+            self.status = f"Generating audio with voice '{voice}' in '{format_}' format at speed {speed}x..."
+            self.log(f"Making TTS request with voice: {voice}, format: {format_}, speed: {speed}")
 
             # Make API request
             response = requests.post(url, headers=headers, json=payload, timeout=30)
@@ -110,6 +125,7 @@ class OpenAITTS(Component):
                     "audio_base64": audio_base64,
                     "format": format_,
                     "voice": voice,
+                    "speed": speed,
                     "size_bytes": len(response.content),
                     "text": text[:100] + "..." if len(text) > 100 else text,
                     "audio_content": response.content

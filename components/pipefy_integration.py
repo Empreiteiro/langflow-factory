@@ -10,7 +10,7 @@ import json
 class PipefyComponent(Component):
     display_name = "Pipefy Integration"
     description = "Perform actions with the Pipefy API."
-    icon = "mdi-pipe"
+    icon = "database"
     name = "PipefyComponent"
 
     inputs = [
