@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import StrInput, FileInput, Output, DataInput
+from langflow.io import StrInput, FileInput, Output, DataInput, IntInput
 from langflow.schema import DataFrame, Data
 import pandas as pd
 from google.oauth2 import service_account
@@ -44,6 +44,13 @@ class GoogleSheetsQuery(Component):
             display_name="Filter Query",
             info="Expression to filter results. Example: 'column1 == \"value\"'.",
             required=False
+        ),
+        IntInput(
+            name="max_results",
+            display_name="Maximum Results",
+            info="Maximum number of results to return. Leave empty for all results.",
+            required=False,
+            value=0
         )
     ]
 
@@ -60,6 +67,7 @@ class GoogleSheetsQuery(Component):
             spreadsheet_id = self.spreadsheet_id
             range_name = self.range_name
             query = self.query
+            max_results = self.max_results
 
             # Check if webhook_data provides overrides
             if isinstance(self.webhook_data, Data) and isinstance(self.webhook_data.data, dict):
@@ -67,6 +75,7 @@ class GoogleSheetsQuery(Component):
                 spreadsheet_id = data.get("spreadsheet_id", spreadsheet_id)
                 range_name = data.get("range_name", range_name)
                 query = data.get("query", query)
+                max_results = data.get("max_results", max_results)
 
             if not self.gcp_credentials_json:
                 raise ValueError("GCP credentials file is empty.")
@@ -91,6 +100,10 @@ class GoogleSheetsQuery(Component):
 
             if query:
                 df = df.query(query, engine="python")
+
+            # Apply max_results limit if specified
+            if max_results and max_results > 0:
+                df = df.head(max_results)
 
             return DataFrame(df)
 
