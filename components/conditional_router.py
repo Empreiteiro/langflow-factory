@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import BoolInput, DropdownInput, MessageInput, MessageTextInput, Output, HandleInput, TabInput, TableInput
+from langflow.io import BoolInput, DropdownInput, MessageInput, MessageTextInput, Output, HandleInput, TabInput, TableInput, MultilineInput
 from langflow.schema.message import Message
 from langchain_core.language_models import BaseLanguageModel
 import re
@@ -72,6 +72,21 @@ class BackupConditionalRouterComponent(Component):
             display_name="Message",
             info="The message to pass through either route.",
         ),
+        BoolInput(
+            name="use_custom_prompt",
+            display_name="Use Custom Prompt",
+            info="Enable to use a custom prompt for LLM-based categorization.",
+            value=False,
+            advanced=True,
+            show=False,
+        ),
+        MultilineInput(
+            name="custom_prompt",
+            display_name="Custom Prompt",
+            info="Additional instructions for LLM-based categorization. These will be added to the base prompt. Use {input_text} for the input text and {categories} for the available categories.",
+            advanced=True,
+            show=False,
+        ),
     ]
 
     outputs = [
@@ -105,6 +120,8 @@ class BackupConditionalRouterComponent(Component):
             build_config["llm"]["show"] = field_value == "Categorization"
             build_config["case_sensitive"]["show"] = field_value == "Text Comparison"
             build_config["operator"]["show"] = field_value == "Text Comparison"
+            build_config["use_custom_prompt"]["show"] = field_value == "Categorization"
+            build_config["custom_prompt"]["show"] = field_value == "Categorization"
         return build_config
 
     def evaluate_condition(self, input_text: str, match_text: str, operator: str, case_sensitive: bool) -> bool:
@@ -123,6 +140,9 @@ class BackupConditionalRouterComponent(Component):
 
     def process_case(self) -> Message:
         """Process all cases and return message for matching case, stop others."""
+        # Clear any previous match state
+        self._matched_case = None
+        
         cases = getattr(self, "cases", [])
         input_text = getattr(self, "input_text", "")
         mode = getattr(self, "mode", "Text Comparison")
@@ -149,7 +169,8 @@ class BackupConditionalRouterComponent(Component):
                 categories = [case.get("value", case.get("label", f"Case {i+1}")) for i, case in enumerate(cases)]
                 categories_text = ", ".join([f'"{cat}"' for cat in categories if cat])
                 
-                prompt = f"""You are a text classifier. Given the following text and categories, determine which category best matches the text.
+                # Create base prompt
+                base_prompt = f"""You are a text classifier. Given the following text and categories, determine which category best matches the text.
 
 Text to classify: "{input_text}"
 
@@ -158,6 +179,25 @@ Available categories: {categories_text}
 Respond with ONLY the exact category name that best matches the text. If none match well, respond with "NONE".
 
 Category:"""
+
+                # Use custom prompt as additional instructions if enabled
+                use_custom_prompt = getattr(self, "use_custom_prompt", False)
+                custom_prompt = getattr(self, "custom_prompt", "")
+                if use_custom_prompt and custom_prompt:
+                    self.status = "Using custom prompt as additional instructions"
+                    # Format custom prompt with variables
+                    formatted_custom = custom_prompt.format(
+                        input_text=input_text,
+                        categories=categories_text
+                    )
+                    # Combine base prompt with custom instructions
+                    prompt = f"{base_prompt}\n\nAdditional Instructions:\n{formatted_custom}"
+                else:
+                    self.status = "Using default prompt for LLM categorization"
+                    prompt = base_prompt
+                
+                # Log the final prompt being sent to LLM
+                self.status = f"Prompt sent to LLM:\n{prompt}"
                 
                 try:
                     # Use the LLM to categorize
@@ -170,16 +210,25 @@ Category:"""
                     else:
                         categorization = str(llm(prompt)).strip().strip('"')
                     
+                    # Log the categorization process
+                    self.status = f"LLM response: '{categorization}'"
+                    
                     # Find matching case based on LLM response
                     for i, case in enumerate(cases):
                         case_value = case.get("value", "")
                         case_label = case.get("label", "")
+                        
+                        # Log each comparison attempt
+                        self.status = f"Comparing '{categorization}' with case {i+1}: value='{case_value}', label='{case_label}'"
+                        
                         if (categorization.lower() == case_value.lower() or 
                             categorization.lower() == case_label.lower()):
                             matched_case = i
+                            self.status = f"MATCH FOUND! Case {i+1} matched with '{categorization}'"
                             break
                     
-                    self.status = f"LLM categorized as: {categorization}"
+                    if matched_case is None:
+                        self.status = f"No match found for '{categorization}'. Available cases: {[(case.get('value', ''), case.get('label', '')) for case in cases]}"
                     
                 except Exception as e:
                     self.status = f"Error in LLM categorization: {str(e)}"
@@ -187,6 +236,9 @@ Category:"""
                 self.status = "No LLM provided for categorization"
         
         if matched_case is not None:
+            # Store the matched case for other outputs to check
+            self._matched_case = matched_case
+            
             # Stop all case outputs except the matched one
             for i in range(len(cases)):
                 if i != matched_case:
@@ -212,12 +264,22 @@ Category:"""
 
     def default_response(self) -> Message:
         """Handle the else case when no conditions match."""
+        # Clear any previous match state if not already set
+        if not hasattr(self, '_matched_case'):
+            self._matched_case = None
+            
         cases = getattr(self, "cases", [])
         input_text = getattr(self, "input_text", "")
         mode = getattr(self, "mode", "Text Comparison")
         operator = getattr(self, "operator", "equals")
         case_sensitive = getattr(self, "case_sensitive", False)
         message = getattr(self, "message", Message(text=""))
+        
+        # Check if a match was already found in process_case
+        if hasattr(self, '_matched_case') and self._matched_case is not None:
+            self.status = f"Match already found in process_case (Case {self._matched_case + 1}), stopping default_response"
+            self.stop("default_result")
+            return Message(text="")
         
         # Check if any case matches based on the mode
         has_match = False
@@ -237,7 +299,8 @@ Category:"""
                     categories = [case.get("value", case.get("label", f"Case {i+1}")) for i, case in enumerate(cases)]
                     categories_text = ", ".join([f'"{cat}"' for cat in categories if cat])
                     
-                    prompt = f"""You are a text classifier. Given the following text and categories, determine which category best matches the text.
+                    # Create base prompt
+                    base_prompt = f"""You are a text classifier. Given the following text and categories, determine which category best matches the text.
 
 Text to classify: "{input_text}"
 
@@ -246,6 +309,25 @@ Available categories: {categories_text}
 Respond with ONLY the exact category name that best matches the text. If none match well, respond with "NONE".
 
 Category:"""
+
+                    # Use custom prompt as additional instructions if enabled
+                    use_custom_prompt = getattr(self, "use_custom_prompt", False)
+                    custom_prompt = getattr(self, "custom_prompt", "")
+                    if use_custom_prompt and custom_prompt:
+                        self.status = "Using custom prompt as additional instructions (default check)"
+                        # Format custom prompt with variables
+                        formatted_custom = custom_prompt.format(
+                            input_text=input_text,
+                            categories=categories_text
+                        )
+                        # Combine base prompt with custom instructions
+                        prompt = f"{base_prompt}\n\nAdditional Instructions:\n{formatted_custom}"
+                    else:
+                        self.status = "Using default prompt for LLM categorization (default check)"
+                        prompt = base_prompt
+                    
+                    # Log the final prompt being sent to LLM for default check
+                    self.status = f"Default check - Prompt sent to LLM:\n{prompt}"
                     
                     # Use the LLM to categorize
                     if hasattr(llm, 'invoke'):
@@ -257,14 +339,25 @@ Category:"""
                     else:
                         categorization = str(llm(prompt)).strip().strip('"')
                     
+                    # Log the categorization process for default check
+                    self.status = f"Default check - LLM response: '{categorization}'"
+                    
                     # Check if LLM response matches any case
-                    for case in cases:
+                    for i, case in enumerate(cases):
                         case_value = case.get("value", "")
                         case_label = case.get("label", "")
+                        
+                        # Log each comparison attempt
+                        self.status = f"Default check - Comparing '{categorization}' with case {i+1}: value='{case_value}', label='{case_label}'"
+                        
                         if (categorization.lower() == case_value.lower() or 
                             categorization.lower() == case_label.lower()):
                             has_match = True
+                            self.status = f"Default check - MATCH FOUND! Case {i+1} matched with '{categorization}'"
                             break
+                    
+                    if not has_match:
+                        self.status = f"Default check - No match found for '{categorization}'. Available cases: {[(case.get('value', ''), case.get('label', '')) for case in cases]}"
                 
                 except Exception:
                     pass  # If there's an error, treat as no match

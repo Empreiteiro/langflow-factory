@@ -1,0 +1,130 @@
+# pdf_text_extractor.py
+import email
+import io
+from langflow.custom import Component
+from langflow.io import DataInput, Output
+from langflow.schema import Data
+from langflow.schema.message import Message
+from pypdf import PdfReader
+
+class PdfTextExtractor(Component):
+    display_name = "PDF Text Extractor"
+    description = "Extracts text from all PDF attachments and builds classification prompt for Agent."
+    icon = "FileText"
+
+    inputs = [
+        DataInput(name="email_data", display_name="Email Data", input_types=["Data"])
+    ]
+
+    outputs = [
+        Output(display_name="Message with Prompt + PDF Text", name="message", method="get_agent_message", group_outputs=True ),
+        Output(display_name="Email Data", name="emaildata", method="get_original_data", group_outputs=True )
+    ]
+    
+    output_methods = ["get_agent_message", "get_original_data"]  # Required in v1.5.0
+
+    def get_agent_message(self) -> Message:
+        """Extract PDF text from email attachments and build classification prompt."""
+        try:
+            # Validate input
+            if not hasattr(self, 'email_data') or self.email_data is None:
+                self.status = "Error: No email data provided."
+                return Message(text="")
+            
+            email_data = self.email_data
+            
+            # Convert to Data if needed
+            if not isinstance(email_data, Data):
+                email_data = Data(data=email_data)
+            
+            all_pdf_texts = []
+
+            if 'raw_email' not in email_data.data:
+                self.status = "Error: No raw_email found in data."
+                return Message(text="")
+
+            raw_email_bytes = email_data.data.get('raw_email')
+            email_id = email_data.data.get('email_id', 'Unknown')
+
+            print(f"[DEBUG] Start PDF extraction for email_id: {email_id}")
+            print(f"[DEBUG] raw_email_bytes size: {len(raw_email_bytes)}")
+
+            msg = email.message_from_bytes(raw_email_bytes)
+
+            for part in msg.walk():
+                filename = part.get_filename()
+                if filename and filename.lower().endswith('.pdf'):
+                    pdf_bytes = part.get_payload(decode=True)
+
+                    if not pdf_bytes:
+                        print(f"[DEBUG] Skipping empty PDF: {filename}")
+                        continue
+
+                    pdf_stream = io.BytesIO(pdf_bytes)
+                    reader = PdfReader(pdf_stream)
+
+                    extracted = []
+                    for page in reader.pages:
+                        text = page.extract_text()
+                        if text:
+                            extracted.append(text)
+
+                    full_pdf_text = "\n".join(extracted).strip()
+                    if full_pdf_text:
+                        print(f"[DEBUG] Extracted from {filename} (start): {full_pdf_text[:80]}")
+                        all_pdf_texts.append(f"--- Extracted from {filename} ---\n{full_pdf_text}")
+
+            if not all_pdf_texts:
+                self.status = f"No PDF found in email {email_id}."
+                return Message(text="", metadata={"email_id": email_id})
+
+            combined_pdf_text = "\n\n".join(all_pdf_texts)
+
+            full_prompt = (
+                "You are an expert document classification agent. Your task is to analyze the following text "
+                "extracted from one or more PDFs and determine whether it is an invoice.\n\n"
+                "Identify patterns and keywords typically found in invoices, such as (but not limited to):\n"
+                "- In English: \"Invoice\", \"Invoice Number\", \"Bill To\", \"Due Date\", \"Total Amount\", \"Subtotal\", \"Item\", \"Quantity\", \"Price\"\n"
+                "- In German: \"Rechnung\", \"Rechnungsnummer\", \"Einzelpreis\", \"Nettobetrag\", \"Bezeichnung\", \"Nettosumme\", \"Zahlungsreferenz\", \"Zahlungsbedingungen\", \"Wert\"\n\n"
+                "These keywords may appear in different forms, capitalizations, or minor spelling variations. "
+                "If the content clearly resembles an invoice (e.g., listing items, pricing, total amounts, sender/recipient info), classify it as such.\n\n"
+                "Respond with **only one word**, and nothing else:\n"
+                "- INVOICE — if the document is an invoice.\n"
+                "- OTHER — if it is not.\n\n"
+                "Do not explain your reasoning. Do not include punctuation or additional words.\n\n"
+                "IMPORTANT: Do not use tools. Do not make plans. Do not think. This is a single-task classification.\n\n"
+                f"PDF Text:\n{combined_pdf_text}"
+            )
+
+            self.status = f"Extracted {len(all_pdf_texts)} PDF(s) from email {email_id}."
+            return Message(text=full_prompt, metadata={"email_id": email_id})
+
+        except Exception as e:
+            self.status = f"Error in get_agent_message: {str(e)}"
+            return Message(text="")
+
+    def get_original_data(self) -> Message:
+        """Return the original email data as a Message."""
+        try:
+            if hasattr(self, 'email_data') and self.email_data is not None:
+                if isinstance(self.email_data, Data):
+                    # Convert Data to Message with email data in metadata
+                    email_id = self.email_data.data.get('email_id', 'Unknown')
+                    self.status = f"Returning email data as Message for email {email_id}"
+                    return Message(
+                        text=f"Email data for ID: {email_id}",
+                        metadata=self.email_data.data
+                    )
+                else:
+                    # Convert other types to Message
+                    self.status = "Converting input to Message format"
+                    return Message(
+                        text="Email data",
+                        metadata=self.email_data if isinstance(self.email_data, dict) else {"data": self.email_data}
+                    )
+            else:
+                self.status = "No email data available, returning empty message"
+                return Message(text="No email data available")
+        except Exception as e:
+            self.status = f"Error in get_original_data: {str(e)}"
+            return Message(text="Error processing email data")
