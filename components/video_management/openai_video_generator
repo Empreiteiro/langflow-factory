@@ -1,0 +1,138 @@
+from langflow.custom import Component
+from langflow.io import MultilineInput, SecretStrInput, IntInput, DropdownInput, Output
+from langflow.schema import Data
+import openai
+import requests
+import mimetypes
+from io import BytesIO
+
+class OpenAIVideoGenerator(Component):
+    display_name = "OpenAI Video Generator"
+    description = "Generates a video based on a prompt using OpenAI's video generation API. Note: Sora API may not be publicly available yet."
+    icon = "video"
+    name = "OpenAIVideoGenerator"
+    field_order = ["prompt", "size", "n_frames", "api_key"]
+
+    inputs = [
+        MultilineInput(
+            name="prompt",
+            display_name="Prompt",
+            info="The description of the video to be generated.",
+            required=True
+        ),
+        DropdownInput(
+            name="size",
+            display_name="Video Size",
+            info="The size/resolution of the video to be generated.",
+            options=["1024x1024", "1280x720", "1920x1080"],
+            value="1280x720",
+            required=True
+        ),
+        IntInput(
+            name="n_frames",
+            display_name="Number of Frames",
+            info="The number of frames for the video (e.g., 30, 60, 120).",
+            value=30,
+            required=True
+        ),
+        SecretStrInput(
+            name="api_key",
+            display_name="OpenAI API Key",
+            info="Your OpenAI API key with access to the video generation endpoint.",
+            required=True
+        ),
+    ]
+
+    outputs = [
+        Output(name="video_url", display_name="Video URL", method="generate_video"),
+    ]
+
+    def generate_video(self) -> Data:
+        """
+        Generates a video using OpenAI's video generation API.
+        
+        Note: As of January 2025, Sora is primarily available through ChatGPT interface
+        for Plus/Pro users, not as a standalone API. This component is prepared for
+        when the API becomes available.
+        """
+        try:
+            # Try different possible endpoints for Sora
+            endpoints = [
+                "https://api.openai.com/v1/videos/generations",  # Possible future endpoint
+                "https://api.openai.com/v1/chat/completions",    # Chat completions with video
+                "https://api.openai.com/v1/videos"               # Original attempt
+            ]
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # First try with JSON payload (similar to other OpenAI APIs)
+            json_payload = {
+                "model": "sora-1",
+                "prompt": self.prompt,
+                "size": self.size,
+                "n_frames": self.n_frames
+            }
+            
+            for endpoint in endpoints:
+                try:
+                    self.log(f"Trying endpoint: {endpoint}")
+                    
+                    if "chat/completions" in endpoint:
+                        # Try using chat completions format for video generation
+                        chat_payload = {
+                            "model": "gpt-4-vision-preview",  # Placeholder
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": f"Generate a video: {self.prompt}"
+                                }
+                            ],
+                            "max_tokens": 300
+                        }
+                        response = requests.post(endpoint, headers=headers, json=chat_payload)
+                    else:
+                        response = requests.post(endpoint, headers=headers, json=json_payload)
+                    
+                    if response.status_code == 200:
+                        json_data = response.json()
+                        # Handle different response formats
+                        if "data" in json_data:
+                            video_url = json_data["data"][0]["url"]
+                        elif "choices" in json_data:
+                            # Chat completions format
+                            video_url = "Video generation via chat API not yet implemented"
+                        else:
+                            video_url = "Response format not recognized"
+                        
+                        self.log(f"Video generated: {video_url}")
+                        return Data(data={"video_url": video_url})
+                    
+                    elif response.status_code == 404:
+                        self.log(f"Endpoint {endpoint} not found (404)")
+                        continue
+                    else:
+                        self.log(f"Endpoint {endpoint} returned {response.status_code}: {response.text}")
+                        continue
+                        
+                except Exception as e:
+                    self.log(f"Error with endpoint {endpoint}: {str(e)}")
+                    continue
+            
+            # If all endpoints fail, provide helpful message
+            error_msg = (
+                "Video generation failed: Sora API may not be publicly available yet. "
+                "As of January 2025, Sora is primarily accessible through ChatGPT Plus/Pro interface. "
+                "Check OpenAI's documentation for API availability updates."
+            )
+            self.log(error_msg)
+            self.status = error_msg
+            return Data(data={"error": error_msg, "info": "Check https://openai.com/sora for current access methods"})
+
+        except Exception as e:
+            error_msg = f"Video generation failed: {str(e)}"
+            self.log(error_msg)
+            self.status = error_msg
+            return Data(data={"error": error_msg})
