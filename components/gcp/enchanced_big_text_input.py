@@ -78,18 +78,10 @@ class BigQueryExecutorComponent(Component):
             advanced=True,
             show=False,
         ),
-        StrInput(
-            name="dataset_id",
-            display_name="Dataset ID",
-            info="The ID of the dataset to work with.",
-            required=False,
-            tool_mode=True,
-            show=False,
-        ),
-        StrInput(
-            name="table_id",
-            display_name="Table ID",
-            info="The ID of the table to work with.",
+        MessageTextInput(
+            name="table_reference",
+            display_name="Table Reference",
+            info="Full table reference in format: project.dataset.table or dataset.table (e.g., 'my-project.my_dataset.my_table')",
             required=False,
             tool_mode=True,
             show=False,
@@ -118,10 +110,10 @@ class BigQueryExecutorComponent(Component):
             tool_mode=True,
             show=False,
         ),
-        DataInput(
-            name="update_data",
-            display_name="Update Data",
-            info="Data to update in the table. Should be a dictionary with column names as keys.",
+        MessageTextInput(
+            name="description_value",
+            display_name="Description",
+            info="New description value to update in the table.",
             required=False,
             tool_mode=True,
             show=False,
@@ -157,18 +149,18 @@ class BigQueryExecutorComponent(Component):
         field_map = {
             "Query": ["query", "clean_query", "auto_escape_tables"],
             "List Datasets": [],
-            "List Tables": ["dataset_id"],
-            "Insert Data": ["dataset_id", "table_id", "data_to_insert"],
-            "Update Rows": ["dataset_id", "table_id", "update_condition", "update_data"],
-            "Create Dataset": ["dataset_id", "dataset_description", "dataset_location"],
-            "Create Table": ["dataset_id", "table_id", "table_schema"],
-            "Delete Table": ["dataset_id", "table_id"],
-            "Get Table Schema": ["dataset_id", "table_id"],
+            "List Tables": ["table_reference"],
+            "Insert Data": ["table_reference", "data_to_insert"],
+            "Update Rows": ["table_reference", "update_condition", "description_value"],
+            "Create Dataset": ["table_reference", "dataset_description", "dataset_location"],
+            "Create Table": ["table_reference", "table_schema"],
+            "Delete Table": ["table_reference"],
+            "Get Table Schema": ["table_reference"],
         }
 
         # Hide all dynamic fields first
-        for field_name in ["query", "clean_query", "auto_escape_tables", "dataset_id", "table_id", "data_to_insert",
-                          "table_schema", "dataset_description", "dataset_location", "update_condition", "update_data"]:
+        for field_name in ["query", "clean_query", "auto_escape_tables", "table_reference", "data_to_insert",
+                          "table_schema", "dataset_description", "dataset_location", "update_condition", "description_value"]:
             if field_name in build_config:
                 build_config[field_name]["show"] = False
 
@@ -430,11 +422,25 @@ class BigQueryExecutorComponent(Component):
         return Data(data={"datasets": dataset_list, "total_datasets": len(dataset_list)})
 
     def _list_tables(self, client) -> Data:
-        dataset_id = getattr(self, 'dataset_id', None)
-        if not dataset_id:
-            return Data(data={"error": "Dataset ID is required for listing tables"})
+        table_reference = getattr(self, 'table_reference', None)
+        if not table_reference:
+            return Data(data={"error": "Table Reference is required for listing tables (use format: dataset or project.dataset)"})
 
         try:
+            # Extract dataset from table reference
+            parts = table_reference.strip().split('.')
+            if len(parts) == 1:
+                # Only dataset provided
+                dataset_id = parts[0]
+            elif len(parts) == 2:
+                # project.dataset format
+                dataset_id = parts[1]
+            elif len(parts) == 3:
+                # project.dataset.table format
+                dataset_id = parts[1]
+            else:
+                return Data(data={"error": "Invalid table reference format. Use: dataset, project.dataset, or project.dataset.table"})
+
             dataset = client.dataset(dataset_id)
             tables = list(client.list_tables(dataset))
             table_list = []
@@ -489,7 +495,7 @@ class BigQueryExecutorComponent(Component):
             if not isinstance(insert_data, list):
                 insert_data = [insert_data]
 
-            table_ref = client.dataset(dataset_id, project=project_id).table(table_id)
+            table_ref = client.dataset(dataset_id).table(table_id)
             table = client.get_table(table_ref)
             
             errors = client.insert_rows_json(table, insert_data)
@@ -558,7 +564,7 @@ class BigQueryExecutorComponent(Component):
                     description=field.get('description', '')
                 ))
 
-            table_ref = client.dataset(dataset_id, project=project_id).table(table_id)
+            table_ref = client.dataset(dataset_id).table(table_id)
             table = bigquery.Table(table_ref, schema=schema)
             
             table = client.create_table(table)
@@ -584,7 +590,7 @@ class BigQueryExecutorComponent(Component):
             return Data(data={"error": "Table ID is required for deleting table"})
 
         try:
-            table_ref = client.dataset(dataset_id, project=project_id).table(table_id)
+            table_ref = client.dataset(dataset_id).table(table_id)
             client.delete_table(table_ref, not_found_ok=True)
             
             return Data(data={
@@ -605,7 +611,7 @@ class BigQueryExecutorComponent(Component):
             return Data(data={"error": "Table ID is required for getting table schema"})
 
         try:
-            table_ref = client.dataset(dataset_id, project=project_id).table(table_id)
+            table_ref = client.dataset(dataset_id).table(table_id)
             table = client.get_table(table_ref)
             
             schema_info = []
@@ -631,57 +637,38 @@ class BigQueryExecutorComponent(Component):
             return Data(data={"error": f"Error getting table schema: {str(e)}"})
 
     def _update_rows(self, client, project_id) -> Data:
-        dataset_id = getattr(self, 'dataset_id', None)
-        table_id = getattr(self, 'table_id', None)
+        table_reference = getattr(self, 'table_reference', None)
         update_condition = getattr(self, 'update_condition', None)
-        update_data = getattr(self, 'update_data', None)
+        description_value = getattr(self, 'description_value', None)
 
-        if not dataset_id:
-            return Data(data={"error": "Dataset ID is required for updating rows"})
-        if not table_id:
-            return Data(data={"error": "Table ID is required for updating rows"})
+        if not table_reference:
+            return Data(data={"error": "Table Reference is required for updating rows"})
         if not update_condition:
             return Data(data={"error": "Update condition (WHERE clause) is required for updating rows"})
-        if not update_data:
-            return Data(data={"error": "Update data is required for updating rows"})
+        if not description_value:
+            return Data(data={"error": "Description is required for updating rows"})
 
         try:
-            # Process the update data input
-            if hasattr(update_data, 'data'):
-                data_dict = update_data.data
-            elif isinstance(update_data, str):
-                data_dict = json.loads(update_data)
-            else:
-                data_dict = update_data
+            # Escape single quotes in the description
+            escaped_description = str(description_value).replace("'", "''")
 
-            # Ensure data is a dictionary
-            if not isinstance(data_dict, dict):
-                return Data(data={"error": "Update data must be a dictionary with column names as keys"})
+            # Clean and format the table reference
+            table_ref = table_reference.strip()
+            if not table_ref.startswith('`') and not table_ref.endswith('`'):
+                # Add backticks if not already present
+                table_ref = f"`{table_ref}`"
 
-            # Build the SET clause
-            set_clauses = []
-            for column, value in data_dict.items():
-                # Handle different data types for SQL
-                if isinstance(value, str):
-                    # Escape single quotes in strings
-                    escaped_value = value.replace("'", "''")
-                    set_clauses.append(f"`{column}` = '{escaped_value}'")
-                elif isinstance(value, (int, float)):
-                    set_clauses.append(f"`{column}` = {value}")
-                elif value is None:
-                    set_clauses.append(f"`{column}` = NULL")
-                elif isinstance(value, bool):
-                    set_clauses.append(f"`{column}` = {str(value).upper()}")
-                else:
-                    # For complex types, convert to string and escape quotes
-                    escaped_value = str(value).replace("'", "''")
-                    set_clauses.append(f"`{column}` = '{escaped_value}'")
+            # Process the WHERE condition to handle quotes properly
+            condition = str(update_condition).strip()
+            
+            # If the condition contains double quotes, convert them to single quotes for BigQuery
+            if '"' in condition:
+                # Replace double quotes with single quotes for string literals in SQL
+                condition = condition.replace('"', "'")
+                self.log(f"Converted WHERE condition quotes: {condition}")
 
-            set_clause = ", ".join(set_clauses)
-
-            # Build the full UPDATE query
-            full_table_id = f"`{project_id}.{dataset_id}.{table_id}`"
-            update_query = f"UPDATE {full_table_id} SET {set_clause} WHERE {update_condition}"
+            # Build the full UPDATE query (only updating the description column)
+            update_query = f"UPDATE {table_ref} SET `description` = '{escaped_description}' WHERE {condition}"
 
             # Log the query for debugging
             self.log(f"Executing UPDATE query: {update_query}")
@@ -697,7 +684,9 @@ class BigQueryExecutorComponent(Component):
                 "success": True,
                 "affected_rows": affected_rows,
                 "query_executed": update_query,
-                "message": f"Successfully updated {affected_rows} rows in table '{dataset_id}.{table_id}'"
+                "description_updated": description_value,
+                "table_reference": table_reference,
+                "message": f"Successfully updated description in {affected_rows} rows in table '{table_reference}'"
             })
 
         except Exception as e:
@@ -706,15 +695,15 @@ class BigQueryExecutorComponent(Component):
             
             # Check for common UPDATE errors and provide helpful hints
             if "Syntax error" in error_msg:
-                error_msg += " (Hint: Check your WHERE condition syntax and column names)"
+                error_msg += " (Hint: Check your WHERE condition syntax and table reference format)"
             elif "Column" in error_msg and "not found" in error_msg:
-                error_msg += " (Hint: Verify column names exist in the table)"
+                error_msg += " (Hint: Verify that 'description' column exists in the table)"
             elif "Table" in error_msg and "not found" in error_msg:
-                error_msg += " (Hint: Verify table name and project ID)"
+                error_msg += " (Hint: Verify table reference format: project.dataset.table or dataset.table)"
             elif "Access Denied" in error_msg:
                 error_msg += " (Hint: Check your service account permissions for UPDATE operations)"
             
-            return Data(data={"error": f"Error updating rows: {error_msg}"})
+            return Data(data={"error": f"Error updating description: {error_msg}"})
 
     # Keep the existing _clean_sql_query method
     def _clean_sql_query(self, query: str) -> str:
