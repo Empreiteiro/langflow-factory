@@ -50,6 +50,7 @@ class BigQueryExecutorComponent(Component):
                 {"name": "Delete Table", "icon": "trash"},
                 {"name": "Insert Data", "icon": "plus"},
                 {"name": "Update Rows", "icon": "edit"},
+                {"name": "Query and Update", "icon": "edit"},
             ],
             real_time_refresh=True,
             limit=1,
@@ -133,6 +134,24 @@ class BigQueryExecutorComponent(Component):
             required=False,
             show=False,
         ),
+        # New inputs for Query and Update functionality
+        MessageTextInput(
+            name="select_query",
+            display_name="SQL Query",
+            info="SQL query to identify which rows to update. ALL columns returned by this query will be used as criteria to precisely match and update only the exact rows found (using WHERE clause with AND conditions for all columns).",
+            required=False,
+            tool_mode=True,
+            show=False,
+        ),
+
+        MessageTextInput(
+            name="update_field_value",
+            display_name="Update Field Value",
+            info="Value to set in the 'updated' field for all rows returned by the query. The component automatically detects the field type. For BOOLEAN: use 'true'/'false'/'1'/'0'. For TIMESTAMP: use 'NOW()' or date string. Empty defaults to TRUE for BOOLEAN or CURRENT_TIMESTAMP() for others.",
+            required=False,
+            tool_mode=True,
+            show=False,
+        ),
     ]
 
     outputs = [
@@ -156,11 +175,13 @@ class BigQueryExecutorComponent(Component):
             "Create Table": ["table_reference", "table_schema"],
             "Delete Table": ["table_reference"],
             "Get Table Schema": ["table_reference"],
+            "Query and Update": ["table_reference", "select_query", "update_field_value"],
         }
 
         # Hide all dynamic fields first
         for field_name in ["query", "clean_query", "auto_escape_tables", "table_reference", "data_to_insert",
-                          "table_schema", "dataset_description", "dataset_location", "update_condition", "description_value"]:
+                          "table_schema", "dataset_description", "dataset_location", "update_condition", "description_value",
+                          "select_query", "update_field_value"]:
             if field_name in build_config:
                 build_config[field_name]["show"] = False
 
@@ -188,6 +209,11 @@ class BigQueryExecutorComponent(Component):
                     # For Query action, return DataFrame directly
                     frontend_node["outputs"].append(
                         Output(display_name="DataFrame", name="dataframe", method="execute_query_dataframe")
+                    )
+                elif action_name == "Query and Update":
+                    # For Query and Update action, return DataFrame with queried and updated data
+                    frontend_node["outputs"].append(
+                        Output(display_name="DataFrame", name="dataframe", method="execute_query_and_update_dataframe")
                     )
                 else:
                     # For all other actions, return Data
@@ -268,6 +294,8 @@ class BigQueryExecutorComponent(Component):
                 return self._delete_table(client, project_id)
             elif action_name == "Get Table Schema":
                 return self._get_table_schema(client, project_id)
+            elif action_name == "Query and Update":
+                return self._query_and_update(client, project_id)
             else:
                 return Data(data={"error": f"Unsupported action: {action_name}"})
 
@@ -313,6 +341,42 @@ class BigQueryExecutorComponent(Component):
 
         # Execute the query using the existing method
         return self._execute_query(client)
+
+    def execute_query_and_update_dataframe(self) -> DataFrame:
+        """Execute query and update operation and return DataFrame with queried data."""
+        try:
+            # First try to read the file and setup credentials
+            try:
+                service_account_path = Path(self.service_account_json_file)
+                with service_account_path.open() as f:
+                    credentials_json = json.load(f)
+                    project_id = credentials_json.get("project_id")
+                    if not project_id:
+                        msg = "No project_id found in service account credentials file."
+                        raise ValueError(msg)
+            except FileNotFoundError as e:
+                msg = f"Service account file not found: {e}"
+                raise ValueError(msg) from e
+            except json.JSONDecodeError as e:
+                msg = "Invalid JSON string for service account credentials"
+                raise ValueError(msg) from e
+
+            # Load credentials
+            try:
+                credentials = Credentials.from_service_account_file(self.service_account_json_file)
+                client = bigquery.Client(credentials=credentials, project=project_id)
+            except Exception as e:
+                msg = f"Error loading service account credentials: {e}"
+                raise ValueError(msg) from e
+
+        except ValueError:
+            raise
+        except Exception as e:
+            msg = f"Error setting up BigQuery client: {e}"
+            raise ValueError(msg) from e
+
+        # Execute the query and update using the existing method
+        return self._execute_query_and_update_dataframe(client, project_id)
 
     def _execute_query(self, client) -> DataFrame:
         # Check for empty or whitespace-only query before cleaning
@@ -704,6 +768,376 @@ class BigQueryExecutorComponent(Component):
                 error_msg += " (Hint: Check your service account permissions for UPDATE operations)"
             
             return Data(data={"error": f"Error updating description: {error_msg}"})
+
+    def _execute_query_and_update_dataframe(self, client, project_id) -> DataFrame:
+        """Execute a query first, then update the 'updated' field for precisely matched rows using ALL query columns as criteria, and return the queried data as DataFrame."""
+        try:
+            table_reference = getattr(self, 'table_reference', None)
+            select_query = getattr(self, 'select_query', None)
+            update_field_value = getattr(self, 'update_field_value', 'NOW()')
+
+            if not table_reference:
+                raise ValueError("Table Reference is required for query and update operation")
+            if not select_query or not select_query.strip():
+                raise ValueError("SQL Query is required for query and update operation")
+
+            # Step 1: Execute the SELECT query
+            query_results = []
+            try:
+                # Clean the query if needed
+                if "```" in select_query:
+                    cleaned_query = self._clean_sql_query(select_query)
+                else:
+                    cleaned_query = select_query.strip()
+
+                # Auto-escape table names if requested
+                if getattr(self, 'auto_escape_tables', True):
+                    cleaned_query = self._auto_escape_table_names(cleaned_query)
+
+                self.log(f"Executing query: {cleaned_query}")
+                query_job = client.query(cleaned_query)
+                query_results_raw = query_job.result()
+                
+                # Convert results to list of dictionaries (same format as _execute_query)
+                for row in query_results_raw:
+                    row_dict = {}
+                    for key, value in row.items():
+                        # Handle BigQuery specific data types
+                        if hasattr(value, 'isoformat'):  # datetime objects
+                            row_dict[key] = value.isoformat()
+                        elif value is None:
+                            row_dict[key] = None
+                        else:
+                            row_dict[key] = value
+                    query_results.append(row_dict)
+                
+                self.log(f"Query executed successfully. Returned {len(query_results)} rows.")
+                
+                if not query_results:
+                    self.log("Query executed but returned no results.")
+                    raise ValueError("Query returned no results to use for update")
+                    
+            except Exception as e:
+                raise ValueError(f"Query execution failed: {str(e)}")
+
+            # Step 2: Update the 'updated' field for each row returned by the query
+            try:
+                # Clean and format the table reference
+                table_ref = table_reference.strip()
+                if not table_ref.startswith('`'):
+                    # Add backticks if not already present
+                    table_ref = f"`{table_ref}`"
+
+                # Detect the type of 'updated' field in the table to format value correctly
+                try:
+                    # Get table schema to detect the 'updated' field type
+                    # Remove backticks for client.get_table() call
+                    clean_table_ref = table_ref.strip('`')
+                    table = client.get_table(clean_table_ref)
+                    updated_field_type = None
+                    for field in table.schema:
+                        if field.name.lower() == 'updated':
+                            updated_field_type = field.field_type
+                            break
+                    
+                    self.log(f"Detected 'updated' field type: {updated_field_type}")
+                    
+                    # Handle the update field value based on detected type
+                    if updated_field_type == 'BOOLEAN' or updated_field_type == 'BOOL':
+                        # Format value for BOOLEAN field
+                        if not update_field_value or update_field_value.strip() == '':
+                            formatted_update_value = "TRUE"
+                        elif update_field_value.upper() in ['NOW()', 'CURRENT_TIMESTAMP()', 'CURRENT_TIMESTAMP']:
+                            formatted_update_value = "TRUE"
+                        elif isinstance(update_field_value, str):
+                            value_upper = update_field_value.upper().strip()
+                            if value_upper in ['TRUE', 'FALSE', '1', '0', 'YES', 'NO']:
+                                if value_upper in ['TRUE', '1', 'YES']:
+                                    formatted_update_value = "TRUE"
+                                else:
+                                    formatted_update_value = "FALSE"
+                            else:
+                                formatted_update_value = "TRUE"
+                        elif isinstance(update_field_value, bool):
+                            formatted_update_value = "TRUE" if update_field_value else "FALSE"
+                        elif isinstance(update_field_value, (int, float)):
+                            formatted_update_value = "TRUE" if update_field_value != 0 else "FALSE"
+                        else:
+                            formatted_update_value = "TRUE"
+                    else:
+                        # Format value for non-BOOLEAN fields (STRING, TIMESTAMP, etc.)
+                        if not update_field_value or update_field_value.strip() == '':
+                            formatted_update_value = "CURRENT_TIMESTAMP()"
+                        elif update_field_value.upper() in ['NOW()', 'CURRENT_TIMESTAMP()', 'CURRENT_TIMESTAMP']:
+                            formatted_update_value = "CURRENT_TIMESTAMP()"
+                        elif isinstance(update_field_value, str):
+                            escaped_value = str(update_field_value).replace("'", "''")
+                            formatted_update_value = f"'{escaped_value}'"
+                        else:
+                            escaped_value = str(update_field_value).replace("'", "''")
+                            formatted_update_value = f"'{escaped_value}'"
+                            
+                except Exception as schema_error:
+                    self.log(f"Could not detect 'updated' field type, defaulting to BOOLEAN: {schema_error}")
+                    # Default to BOOLEAN behavior if schema detection fails
+                    if not update_field_value or update_field_value.strip() == '':
+                        formatted_update_value = "TRUE"
+                    elif update_field_value.upper() in ['NOW()', 'CURRENT_TIMESTAMP()', 'CURRENT_TIMESTAMP']:
+                        formatted_update_value = "TRUE"
+                    elif isinstance(update_field_value, str):
+                        value_upper = update_field_value.upper().strip()
+                        if value_upper in ['TRUE', 'FALSE', '1', '0', 'YES', 'NO']:
+                            if value_upper in ['TRUE', '1', 'YES']:
+                                formatted_update_value = "TRUE"
+                            else:
+                                formatted_update_value = "FALSE"
+                        else:
+                            formatted_update_value = "TRUE"
+                    elif isinstance(update_field_value, bool):
+                        formatted_update_value = "TRUE" if update_field_value else "FALSE"
+                    elif isinstance(update_field_value, (int, float)):
+                        formatted_update_value = "TRUE" if update_field_value != 0 else "FALSE"
+                    else:
+                        formatted_update_value = "TRUE"
+
+                # For each row returned by the query, update the 'updated' field
+                # Use ALL columns as criteria to ensure only the exact rows are updated
+                total_affected_rows = 0
+                
+                if not query_results:
+                    self.log("No query results to process for update")
+                    raise ValueError("No query results available for update operation")
+                
+                # Get all column names from the query results
+                all_columns = list(query_results[0].keys()) if query_results else []
+                if not all_columns:
+                    raise ValueError("Query results must include at least one column to identify rows for update")
+                
+                self.log(f"Using ALL columns as criteria for precise updates: {all_columns}")
+                
+                for i, row in enumerate(query_results):
+                    # Build WHERE clause using ALL columns from the query result
+                    where_conditions = []
+                    
+                    for column_name in all_columns:
+                        column_value = row[column_name]
+                        
+                        # Handle different data types for each column
+                        if column_value is None:
+                            where_conditions.append(f"`{column_name}` IS NULL")
+                        elif isinstance(column_value, str):
+                            escaped_value = str(column_value).replace("'", "''")
+                            where_conditions.append(f"`{column_name}` = '{escaped_value}'")
+                        elif isinstance(column_value, (int, float)):
+                            where_conditions.append(f"`{column_name}` = {column_value}")
+                        elif isinstance(column_value, bool):
+                            bool_value = "TRUE" if column_value else "FALSE"
+                            where_conditions.append(f"`{column_name}` = {bool_value}")
+                        elif hasattr(column_value, 'isoformat'):  # datetime objects
+                            where_conditions.append(f"`{column_name}` = '{column_value.isoformat()}'")
+                        else:
+                            # For any other type, convert to string and escape
+                            escaped_value = str(column_value).replace("'", "''")
+                            where_conditions.append(f"`{column_name}` = '{escaped_value}'")
+                    
+                    # Combine all conditions with AND
+                    where_clause = " AND ".join(where_conditions)
+                    
+                    # Build and execute the UPDATE query for this specific row
+                    update_query = f"UPDATE {table_ref} SET `updated` = {formatted_update_value} WHERE {where_clause}"
+                    
+                    self.log(f"Executing update query {i+1}/{len(query_results)}: {update_query}")
+                    
+                    update_job = client.query(update_query)
+                    update_job.result()  # Wait for the job to complete
+                    
+                    # Get the number of affected rows for this update
+                    affected_rows = update_job.num_dml_affected_rows if hasattr(update_job, 'num_dml_affected_rows') else 0
+                    total_affected_rows += affected_rows
+                
+                self.log(f"Update completed successfully. Total affected rows: {total_affected_rows}")
+                
+            except Exception as e:
+                error_msg = f"Update execution failed: {str(e)}"
+                
+                # Enhanced error reporting
+                if "Syntax error" in error_msg:
+                    error_msg += " (Hint: Check your table reference format and query structure)"
+                elif "Column" in error_msg and "not found" in error_msg:
+                    error_msg += " (Hint: Verify that 'updated' column exists in the table, or check that all column names from your query exist in the target table)"
+                elif "cannot be assigned" in error_msg.lower() and "type" in error_msg.lower():
+                    error_msg += " (Hint: Check the data type of the 'updated' column. For BOOLEAN fields use 'true'/'false', for TIMESTAMP fields use NOW() or a date string)"
+                elif "Table" in error_msg and "not found" in error_msg:
+                    error_msg += " (Hint: Verify table reference format: project.dataset.table)"
+                elif "Access Denied" in error_msg:
+                    error_msg += " (Hint: Check your service account permissions for UPDATE operations)"
+
+                self.log(error_msg)
+                raise ValueError(error_msg)
+
+            # Return the query results as DataFrame (same format as regular query)
+            return DataFrame(query_results)
+
+        except Exception as e:
+            error_msg = f"Error in query and update operation: {str(e)}"
+            self.log(error_msg)
+            raise ValueError(error_msg)
+
+    def _query_and_update(self, client, project_id) -> Data:
+        """Execute a query first, then update all columns from query results in the table."""
+        try:
+            table_reference = getattr(self, 'table_reference', None)
+            update_where_condition = getattr(self, 'update_where_condition', None)
+            select_query = getattr(self, 'select_query', None)
+
+            if not table_reference:
+                return Data(data={"error": "Table Reference is required for query and update operation"})
+            if not update_where_condition:
+                return Data(data={"error": "Update WHERE condition is required for update operation"})
+            if not select_query or not select_query.strip():
+                return Data(data={"error": "SQL Query is required for query and update operation"})
+
+            # Step 1: Execute the SELECT query
+            query_results = None
+            column_names = []
+            try:
+                # Clean the query if needed
+                if "```" in select_query:
+                    cleaned_query = self._clean_sql_query(select_query)
+                else:
+                    cleaned_query = select_query.strip()
+
+                # Auto-escape table names if requested
+                if getattr(self, 'auto_escape_tables', True):
+                    cleaned_query = self._auto_escape_table_names(cleaned_query)
+
+                self.log(f"Executing query: {cleaned_query}")
+                query_job = client.query(cleaned_query)
+                query_results = list(query_job.result())
+                
+                # Get column names from the first row (if any results)
+                if query_results:
+                    column_names = list(query_results[0].keys())
+                    self.log(f"Query executed successfully. Returned {len(query_results)} rows with columns: {column_names}")
+                else:
+                    self.log("Query executed but returned no results.")
+                    return Data(data={"error": "Query returned no results to use for update"})
+                    
+            except Exception as e:
+                return Data(data={"error": f"Query execution failed: {str(e)}"})
+
+            # Step 2: Update all columns from query results
+            if not query_results:
+                return Data(data={"error": "No query results available for update operation"})
+
+            # Clean and format the table reference
+            table_ref = table_reference.strip()
+            if not table_ref.startswith('`'):
+                # Add backticks if not already present
+                table_ref = f"`{table_ref}`"
+
+            # Process the WHERE condition
+            condition = str(update_where_condition).strip()
+            # If the condition contains double quotes, convert them to single quotes for BigQuery
+            if '"' in condition:
+                condition = condition.replace('"', "'")
+                self.log(f"Converted WHERE condition quotes: {condition}")
+
+            # For each row in query results, create an UPDATE statement
+            total_affected_rows = 0
+            update_queries = []
+            
+            for i, row in enumerate(query_results):
+                # Build SET clause with all columns from query result
+                set_clauses = []
+                for column_name in column_names:
+                    value = row[column_name]
+                    
+                    # Handle different data types
+                    if value is None:
+                        formatted_value = "NULL"
+                    elif isinstance(value, str):
+                        # Escape single quotes and wrap in quotes
+                        escaped_value = str(value).replace("'", "''")
+                        formatted_value = f"'{escaped_value}'"
+                    elif hasattr(value, 'isoformat'):  # datetime objects
+                        formatted_value = f"'{value.isoformat()}'"
+                    elif isinstance(value, (int, float)):
+                        formatted_value = str(value)
+                    elif isinstance(value, bool):
+                        formatted_value = "TRUE" if value else "FALSE"
+                    else:
+                        # For any other type, convert to string and wrap in quotes
+                        escaped_value = str(value).replace("'", "''")
+                        formatted_value = f"'{escaped_value}'"
+                    
+                    set_clauses.append(f"`{column_name}` = {formatted_value}")
+
+                # Build and execute the UPDATE query for this row
+                set_clause = ", ".join(set_clauses)
+                update_query = f"UPDATE {table_ref} SET {set_clause} WHERE {condition}"
+                update_queries.append(update_query)
+
+                self.log(f"Executing update query {i+1}/{len(query_results)}: {update_query}")
+
+                try:
+                    update_job = client.query(update_query)
+                    update_job.result()  # Wait for the job to complete
+
+                    # Get the number of affected rows
+                    affected_rows = update_job.num_dml_affected_rows if hasattr(update_job, 'num_dml_affected_rows') else 0
+                    total_affected_rows += affected_rows
+                    
+                except Exception as e:
+                    error_msg = f"Update execution failed for row {i+1}: {str(e)}"
+                    
+                    # Enhanced error reporting
+                    if "Syntax error" in error_msg:
+                        error_msg += " (Hint: Check your WHERE condition syntax and table reference format)"
+                    elif "Column" in error_msg and "not found" in error_msg:
+                        error_msg += f" (Hint: Verify that columns {column_names} exist in the table)"
+                    elif "Table" in error_msg and "not found" in error_msg:
+                        error_msg += " (Hint: Verify table reference format: project.dataset.table)"
+                    elif "Access Denied" in error_msg:
+                        error_msg += " (Hint: Check your service account permissions for UPDATE operations)"
+
+                    self.log(error_msg)
+                    return Data(data={"error": error_msg, "failed_query": update_query, "failed_row": i+1})
+
+            result_data = {
+                "success": True,
+                "query_executed": True,
+                "query_results_count": len(query_results),
+                "update_executed": True,
+                "total_affected_rows": total_affected_rows,
+                "columns_updated": column_names,
+                "updates_performed": len(query_results),
+                "table_reference": table_reference,
+                "message": f"Successfully updated {len(column_names)} columns in {total_affected_rows} rows in table '{table_reference}' using {len(query_results)} query results"
+            }
+
+            # Include first few query results for reference (limited to first 5 rows for safety)
+            if query_results:
+                limited_results = []
+                for row in query_results[:5]:  # Limit to first 5 rows
+                    row_dict = {}
+                    for key, value in row.items():
+                        # Handle BigQuery specific data types
+                        if hasattr(value, 'isoformat'):  # datetime objects
+                            row_dict[key] = value.isoformat()
+                        elif value is None:
+                            row_dict[key] = None
+                        else:
+                            row_dict[key] = value
+                    limited_results.append(row_dict)
+                result_data["query_results_sample"] = limited_results
+
+            return Data(data=result_data)
+
+        except Exception as e:
+            error_msg = f"Error in query and update operation: {str(e)}"
+            self.log(error_msg)
+            return Data(data={"error": error_msg})
 
     # Keep the existing _clean_sql_query method
     def _clean_sql_query(self, query: str) -> str:
