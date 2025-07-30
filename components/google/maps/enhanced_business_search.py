@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import StrInput, SecretStrInput, Output, IntInput, BoolInput
+from langflow.io import MessageInput, SecretStrInput, Output, IntInput, BoolInput
 from langflow.schema import DataFrame
 import requests
 import pandas as pd
@@ -21,25 +21,23 @@ class EnhancedBusinessSearchComponent(Component):
             info="Your Google Maps API key with Places API (New) enabled.",
             required=True,
         ),
-        StrInput(
+        MessageInput(
             name="business_type",
             display_name="Business Type",
             info="Type of business (e.g., restaurant, hospital, bookstore).",
             required=True,
-            tool_mode=True        
         ),
-        StrInput(
+        MessageInput(
             name="city",
             display_name="City",
             info="City to search in (e.g., New York, Paris).",
             required=True,
-            tool_mode=True        
         ),
-        IntInput(
+        MessageInput(
             name="max_results",
             display_name="Max Results",
-            info="Maximum number of businesses to return (default: 10).",
-            value=100,
+            info="Maximum number of businesses to return (default: 30).",
+            required=False,
         ),
         BoolInput(
             name="include_details",
@@ -97,37 +95,85 @@ class EnhancedBusinessSearchComponent(Component):
 
     def search_businesses(self) -> DataFrame:
         try:
-            query = f"{self.business_type} in {self.city}"
+            # Extract text content from MessageInput
+            business_type_text = self.business_type.text if hasattr(self.business_type, 'text') else str(self.business_type)
+            city_text = self.city.text if hasattr(self.city, 'text') else str(self.city)
+            
+            # Extract max_results from MessageInput
+            max_results_value = 30  # Default value
+            if self.max_results is not None and hasattr(self.max_results, 'text'):
+                try:
+                    max_results_value = int(self.max_results.text)
+                except (ValueError, AttributeError):
+                    max_results_value = 30
+            
+            query = f"{business_type_text} in {city_text}"
             url = "https://places.googleapis.com/v1/places:searchText"
             headers = {
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": self.api_key,
-                "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.id,places.internationalPhoneNumber"
-            }
-            body = {
-                "textQuery": query,
-                "maxResultCount": min(self.max_results, 20)  # API limit is 20
+                "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.id,places.internationalPhoneNumber,places.location"
             }
 
             self.log(f"Searching for: {query}")
-            response = requests.post(url, headers=headers, json=body, timeout=15)
+            all_places = []
+            seen_place_ids = set()
             
-            if response.status_code != 200:
-                error_info = response.json().get("error", {})
-                message = error_info.get("message", response.text)
-                self.status = f"Google API Error: {message}"
-                return DataFrame(pd.DataFrame({"error": [self.status]}))
+            # Multiple query variations to get more results
+            query_variations = [
+                f"{business_type_text} in {city_text}",
+                f"{business_type_text} near {city_text}",
+                f"{business_type_text} {city_text}",
+                f"best {business_type_text} in {city_text}",
+                f"top {business_type_text} {city_text}",
+            ]
+            
+            for i, query_variant in enumerate(query_variations):
+                if len(all_places) >= max_results_value:
+                    break
+                    
+                self.log(f"Query variation {i+1}/{len(query_variations)}: {query_variant}")
+                
+                body = {
+                    "textQuery": query_variant,
+                    "maxResultCount": 20  # API limit is 20 per request
+                }
 
-            places = response.json().get("places", [])
-            if not places:
+                response = requests.post(url, headers=headers, json=body, timeout=15)
+                
+                if response.status_code != 200:
+                    self.log(f"Query variation {i+1} failed: {response.status_code}")
+                    continue
+
+                data = response.json()
+                places = data.get("places", [])
+                
+                # Add unique places only
+                for place in places:
+                    place_id = place.get("id", "")
+                    if place_id and place_id not in seen_place_ids:
+                        seen_place_ids.add(place_id)
+                        all_places.append(place)
+                        
+                        if len(all_places) >= max_results_value:
+                            break
+                
+                # Add delay between requests to respect rate limits
+                if i < len(query_variations) - 1:
+                    time.sleep(0.5)
+
+            if not all_places:
                 return DataFrame(pd.DataFrame({"message": ["No businesses found."]}))
 
+            # Limit to the exact number requested
+            all_places = all_places[:max_results_value]
+
             results = []
-            total_places = len(places)
+            total_places = len(all_places)
             
             self.log(f"Found {total_places} businesses. Processing...")
             
-            for i, place in enumerate(places):
+            for i, place in enumerate(all_places):
                 self.log(f"Processing business {i+1}/{total_places}")
                 
                 # Basic information from search

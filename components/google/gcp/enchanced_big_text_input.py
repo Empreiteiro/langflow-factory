@@ -868,11 +868,6 @@ class BigQueryExecutorComponent(Component):
                 # Format the field value based on type
                 formatted_value = self._format_field_value(update_field_value)
                 
-                # Create fields_to_update dictionary for compatibility with existing code
-                fields_to_update = {
-                    update_field_name: {'value': formatted_value}
-                }
-
                 # Get table schema to detect field types for better formatting
                 try:
                     # Remove backticks for client.get_table() call
@@ -888,14 +883,6 @@ class BigQueryExecutorComponent(Component):
                     self.log(f"Could not detect field types: {schema_error}")
                     field_types = {}
 
-                # For each row returned by the query, update the specified fields
-                # Use ALL columns as criteria to ensure only the exact rows are updated
-                total_affected_rows = 0
-                
-                if not query_results:
-                    self.log("No query results to process for update")
-                    raise ValueError("No query results available for update operation")
-                
                 # Get all column names from the query results
                 all_columns = list(query_results[0].keys()) if query_results else []
                 if not all_columns:
@@ -905,65 +892,47 @@ class BigQueryExecutorComponent(Component):
                 key_columns = self._detect_key_columns(all_columns)
                 self.log(f"Query returned columns: {all_columns}")
                 self.log(f"Using key columns as criteria for updates: {key_columns}")
-                self.log(f"Fields to update: {list(fields_to_update.keys())}")
+                self.log(f"Field to update: {update_field_name}")
                 
-                if len(key_columns) < len(all_columns):
-                    self.log(f"Note: Using {len(key_columns)} key columns instead of all {len(all_columns)} columns for more efficient updates")
+                # Optimize: Use a single UPDATE query with a subquery instead of row-by-row updates
+                # This approach uses the original query as a subquery to identify rows to update
                 
-                for i, row in enumerate(query_results):
-                    # Build WHERE clause using only key columns from the query result
-                    where_conditions = []
-                    
-                    for column_name in key_columns:
-                        column_value = row[column_name]
-                        
-                        # Handle different data types for each column
-                        if column_value is None:
-                            where_conditions.append(f"`{column_name}` IS NULL")
-                        elif isinstance(column_value, str):
-                            escaped_value = str(column_value).replace("'", "''")
-                            where_conditions.append(f"`{column_name}` = '{escaped_value}'")
-                        elif isinstance(column_value, (int, float)):
-                            where_conditions.append(f"`{column_name}` = {column_value}")
-                        elif isinstance(column_value, bool):
-                            bool_value = "TRUE" if column_value else "FALSE"
-                            where_conditions.append(f"`{column_name}` = {bool_value}")
-                        elif hasattr(column_value, 'isoformat'):  # datetime objects
-                            where_conditions.append(f"`{column_name}` = '{column_value.isoformat()}'")
-                        else:
-                            # For any other type, convert to string and escape
-                            escaped_value = str(column_value).replace("'", "''")
-                            where_conditions.append(f"`{column_name}` = '{escaped_value}'")
-                    
-                    # Combine all conditions with AND
-                    where_clause = " AND ".join(where_conditions)
-                    
-                    # Build SET clause with all fields to update
-                    set_clauses = []
-                    for field_name, field_info in fields_to_update.items():
-                        field_value = field_info['value']
-                        
-                        # Use explicit type if provided, otherwise try to detect from schema
-                        # For query and update, we don't have explicit types, so we'll just use the formatted value
-                        set_clauses.append(f"`{field_name}` = {field_value}")
-                    
-                    # Build and execute the UPDATE query for this specific row
-                    set_clause = ", ".join(set_clauses)
-                    update_query = f"UPDATE {table_ref} SET {set_clause} WHERE {where_clause}"
-                    
-                    self.log(f"Executing update query {i+1}/{len(query_results)}: {update_query}")
-                    
-                    update_job = client.query(update_query)
-                    update_job.result()  # Wait for the job to complete
-                    
-                    # Get the number of affected rows for this update
-                    affected_rows = update_job.num_dml_affected_rows if hasattr(update_job, 'num_dml_affected_rows') else 0
-                    total_affected_rows += affected_rows
+                # Clean the original query to use as subquery
+                subquery = cleaned_query.strip()
+                if subquery.endswith(';'):
+                    subquery = subquery[:-1]  # Remove trailing semicolon
                 
-                self.log(f"Update completed successfully. Total affected rows: {total_affected_rows}")
+                # Build the optimized UPDATE query using the original query as a subquery
+                # We'll use EXISTS with the subquery to match rows
+                where_conditions = []
+                for column_name in key_columns:
+                    where_conditions.append(f"main_table.`{column_name}` = sub_query.`{column_name}`")
+                
+                where_clause = " AND ".join(where_conditions)
+                
+                # Create the optimized UPDATE query
+                optimized_update_query = f"""
+UPDATE {table_ref} AS main_table
+SET `{update_field_name}` = {formatted_value}
+WHERE EXISTS (
+    SELECT 1 
+    FROM ({subquery}) AS sub_query
+    WHERE {where_clause}
+)"""
+                
+                self.log(f"Executing optimized bulk update query: {optimized_update_query}")
+                
+                # Execute the single bulk update
+                update_job = client.query(optimized_update_query)
+                update_job.result()  # Wait for the job to complete
+                
+                # Get the number of affected rows
+                total_affected_rows = update_job.num_dml_affected_rows if hasattr(update_job, 'num_dml_affected_rows') else len(query_results)
+                
+                self.log(f"Bulk update completed successfully. Total affected rows: {total_affected_rows}")
                 
             except Exception as e:
-                error_msg = f"Update execution failed: {str(e)}"
+                error_msg = f"Bulk update execution failed: {str(e)}"
                 
                 # Enhanced error reporting
                 if "Syntax error" in error_msg:
@@ -978,7 +947,7 @@ class BigQueryExecutorComponent(Component):
                     error_msg += " (Hint: Check your service account permissions for UPDATE operations)"
 
                 # Include the generated query in the error message
-                error_msg += f"\n\nGenerated Query:\n{update_query if 'update_query' in locals() else 'Query not available'}"
+                error_msg += f"\n\nGenerated Query:\n{optimized_update_query if 'optimized_update_query' in locals() else 'Query not available'}"
                 
                 self.log(error_msg)
                 raise ValueError(error_msg)

@@ -1,21 +1,23 @@
 from langflow.custom import Component
-from langflow.io import DataInput, StrInput, FileInput, Output
+from langflow.io import HandleInput, StrInput, FileInput, Output
 from langflow.schema import Data
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json
+import pandas as pd
 
 class CreateGoogleSheet(Component):
     display_name = "Create Google Sheet"
-    description = "Creates a new Google Sheet in the specified folder and populates it with JSON data."
+    description = "Creates a new Google Sheet in the specified folder and populates it with JSON data or DataFrame."
     icon = "plus-square"
     name = "Create Google Sheet"
 
     inputs = [
-        DataInput(
+        HandleInput(
             name="payload",
             display_name="Payload",
-            info="A dictionary, list of dictionaries, or dictionary with a 'results' list to populate the sheet.",
+            info="A dictionary, list of dictionaries, DataFrame, or dictionary with a 'results' list to populate the sheet.",
+            input_types=["Data", "DataFrame"],
             required=True
         ),
         FileInput(
@@ -71,13 +73,26 @@ class CreateGoogleSheet(Component):
             # Extract raw content from Data wrapper if needed
             raw_payload = self.payload.data if isinstance(self.payload, Data) else self.payload
 
-            if isinstance(raw_payload, str):
+            # Handle DataFrame
+            if isinstance(raw_payload, pd.DataFrame):
+                # Convert DataFrame to list of dictionaries
+                rows = raw_payload.to_dict('records')
+            elif isinstance(raw_payload, str):
                 try:
                     raw_payload = json.loads(raw_payload)
                 except Exception as e:
                     raise ValueError(f"Payload string could not be parsed as JSON: {str(e)}")
-
-            if isinstance(raw_payload, dict):
+                
+                if isinstance(raw_payload, dict):
+                    if "results" in raw_payload and isinstance(raw_payload["results"], list):
+                        rows = raw_payload["results"]
+                    else:
+                        rows = [raw_payload]
+                elif isinstance(raw_payload, list) and all(isinstance(r, dict) for r in raw_payload):
+                    rows = raw_payload
+                else:
+                    raise ValueError(f"Payload string could not be recognized. Type: {type(raw_payload)}, value: {str(raw_payload)[:300]}")
+            elif isinstance(raw_payload, dict):
                 if "results" in raw_payload and isinstance(raw_payload["results"], list):
                     rows = raw_payload["results"]
                 else:
@@ -85,7 +100,7 @@ class CreateGoogleSheet(Component):
             elif isinstance(raw_payload, list) and all(isinstance(r, dict) for r in raw_payload):
                 rows = raw_payload
             else:
-                raise ValueError(f"Payload could not be recognized. Type: {type(raw_payload)}, value: {str(raw_payload)[:300]}")
+                raise ValueError(f"Payload could not be recognized. Type: {type(raw_payload)}, value: {str(raw_payload)[:300]}. Supported types: DataFrame, dict, list of dicts, or JSON string.")
 
             if not rows:
                 raise ValueError("No data to populate the sheet with.")

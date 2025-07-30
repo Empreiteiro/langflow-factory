@@ -9,7 +9,7 @@ from io import BytesIO
 class OpenAIVideoGenerator(Component):
     display_name = "OpenAI Video Generator"
     description = "Generates a video based on a prompt using OpenAI's video generation API. Note: Sora API may not be publicly available yet."
-    icon = "video"
+    icon = "OpenAI"
     name = "OpenAIVideoGenerator"
     field_order = ["prompt", "size", "n_frames", "api_key"]
 
@@ -36,7 +36,7 @@ class OpenAIVideoGenerator(Component):
             required=True
         ),
         SecretStrInput(
-            name="api_key",
+            name="opaneai_api_key",
             display_name="OpenAI API Key",
             info="Your OpenAI API key with access to the video generation endpoint.",
             required=True
