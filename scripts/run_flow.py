@@ -122,6 +122,8 @@ def run_flow(api_key, langflow_url, flow_id, input_value="hello world!", tweaks=
         input_type (str): Input type (default: "text")
     """
     
+     # Ensure URL doesn't have double slashes
+    langflow_url = langflow_url.rstrip('/')
     flow_url = f"{langflow_url}/api/v1/run/{flow_id}"
     
     payload = {

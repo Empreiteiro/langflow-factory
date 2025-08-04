@@ -111,3 +111,4 @@ components/gmail
 flows/langflow_support_agent
 flows/orquestrator
 flows/business_developer
+flows/facebook
