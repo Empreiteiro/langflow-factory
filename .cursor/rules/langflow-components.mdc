@@ -224,3 +224,65 @@ def search_method(self) -> DataFrame:
 - Clean up temporary files
 - Handle memory-intensive operations carefully
 - Use generators for large data processing
+
+## Multi-Action Component Pattern
+
+### Creating Components with Separate Actions
+When you need multiple actions in a single component (like Z-API Actions), follow this pattern:
+
+#### 1. Multiple Outputs Structure
+```python
+outputs = [
+    Output(display_name="Action 1", name="action1", method="method1"),
+    Output(display_name="Action 2", name="action2", method="method2"),
+    Output(display_name="Action 3", name="action3", method="method3"),
+]
+```
+
+#### 2. Separate Methods for Each Action
+```python
+def method1(self) -> Data:
+    """Execute Action 1 logic"""
+    try:
+        # Action 1 specific logic
+        result = self._execute_action1()
+        return Data(data={"result": result})
+    except Exception as e:
+        self.log(f"Action 1 failed: {str(e)}")
+        raise ValueError(f"Action 1 failed: {e!s}") from e
+
+def method2(self) -> Data:
+    """Execute Action 2 logic"""
+    try:
+        # Action 2 specific logic
+        result = self._execute_action2()
+        return Data(data={"result": result})
+    except Exception as e:
+        self.log(f"Action 2 failed: {str(e)}")
+        raise ValueError(f"Action 2 failed: {e!s}") from e
+```
+
+#### 3. Key Implementation Rules
+- **Each output = one action in Langflow UI**
+- **Each method = one specific operation**
+- **Remove action selection dropdowns** - users connect desired output
+- **Each method handles its own authentication and validation**
+- **Follow the pattern of StructuredOutputComponent and AstraDB**
+
+#### 4. Benefits of This Pattern
+- Actions appear as separate options in Langflow
+- No need for action selection logic
+- Cleaner user interface
+- Better error isolation per action
+- Easier to maintain and extend
+
+#### 5. Example Components Using This Pattern
+- `ZAPIActionsComponent` - Multiple Z-API operations
+- `StructuredOutputComponent` - Multiple output formats
+- `AstraDBVectorStoreComponent` - Multiple search methods
+
+#### 6. Common Mistakes to Avoid
+- DON'T use a single method with action selection
+- DON'T mix action selection dropdowns with multiple outputs
+- DON'T forget to handle errors in each method separately
+- DON'T use `self.status` when returning DataFrames

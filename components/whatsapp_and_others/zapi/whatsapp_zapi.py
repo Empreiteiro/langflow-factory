@@ -25,7 +25,7 @@ class APIRequestComponent(Component):
             show=True
         ),
         SecretStrInput(
-            name="instance",
+            name="zapi_instance",
             display_name="Instance",
             info="Z-API instance ID.",
             required=True,
@@ -33,7 +33,7 @@ class APIRequestComponent(Component):
             show=True
         ),
         SecretStrInput(
-            name="token",
+            name="zapi_token",
             display_name="Token",
             info="Z-API authentication token.",
             required=True,
@@ -41,7 +41,7 @@ class APIRequestComponent(Component):
             show=True
         ),
         SecretStrInput(
-            name="client_token",
+            name="zapi_client_token",
             display_name="Client Token",
             info="Token enviado no header da requisição.",
             required=True,
@@ -142,7 +142,7 @@ class APIRequestComponent(Component):
         ),
     ]
 
-    field_order = ["trigger", "instance", "token", "client_token", "type", "phone", "message", "audio", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
+    field_order = ["trigger", "zapi_instance", "zapi_token", "zapi_client_token", "type", "phone", "message", "audio", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
 
     outputs = [
         Output(display_name="API Response", name="api_response", method="send_request"),
@@ -196,23 +196,23 @@ class APIRequestComponent(Component):
 
     def send_request(self) -> Data:
         # Handle SecretStrInput properly
-        instance = self.instance
-        if hasattr(self.instance, 'get_secret_value'):
-            instance = self.instance.get_secret_value()
-        elif isinstance(self.instance, str):
-            instance = self.instance
+        instance = self.zapi_instance
+        if hasattr(self.zapi_instance, 'get_secret_value'):
+            instance = self.zapi_instance.get_secret_value()
+        elif isinstance(self.zapi_instance, str):
+            instance = self.zapi_instance
             
-        token = self.token
-        if hasattr(self.token, 'get_secret_value'):
-            token = self.token.get_secret_value()
-        elif isinstance(self.token, str):
-            token = self.token
+        token = self.zapi_token
+        if hasattr(self.zapi_token, 'get_secret_value'):
+            token = self.zapi_token.get_secret_value()
+        elif isinstance(self.zapi_token, str):
+            token = self.zapi_token
             
-        client_token = self.client_token
-        if hasattr(self.client_token, 'get_secret_value'):
-            client_token = self.client_token.get_secret_value()
-        elif isinstance(self.client_token, str):
-            client_token = self.client_token
+        client_token = self.zapi_client_token
+        if hasattr(self.zapi_client_token, 'get_secret_value'):
+            client_token = self.zapi_client_token.get_secret_value()
+        elif isinstance(self.zapi_client_token, str):
+            client_token = self.zapi_client_token
         
         # Extract message type from SortableListInput
         message_type = None
