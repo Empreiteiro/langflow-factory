@@ -1,6 +1,5 @@
 from langflow.custom import Component
 from langflow.io import StrInput, DropdownInput, Output
-from langflow.schema.message import Message
 import os
 
 class SQLiteConnectionString(Component):
@@ -10,7 +9,7 @@ class SQLiteConnectionString(Component):
     name = "SQLiteConnectionString"
 
     inputs = [
-        MessageInput(
+        StrInput(
             name="path",
             display_name="File Path",
             info="Absolute path to the .sqlite file",
@@ -26,15 +25,22 @@ class SQLiteConnectionString(Component):
     ]
 
     outputs = [
-        Output(name="connection_string", display_name="Connection String", method="build"),
+        Output(name="text", display_name="Connection String", method="get_text"),
     ]
 
-    def build(self) -> Message:
+    def build(self):
+        """Process the inputs and build the connection string."""
         try:
             if not self.path:
                 raise ValueError("The file path is required.")
 
-            path = self.path
+            # Extract text if it's a Message object
+            if hasattr(self.path, 'text'):
+                path = self.path.text
+            elif hasattr(self.path, 'content'):
+                path = self.path.content
+            else:
+                path = str(self.path)
 
             if self.os.lower() == "windows":
                 path = path.replace("\\", "/")
@@ -46,8 +52,18 @@ class SQLiteConnectionString(Component):
                     path = f"/{path}"
                 conn_str = f"sqlite:////{path.lstrip('/')}"
 
-            return Message(text=conn_str)
+            self.connection_string = conn_str
+            self.status = f"Successfully created connection string: {conn_str}"
+            self.log(self.status)
+
         except Exception as e:
             error_message = f"Error building connection string: {str(e)}"
             self.status = error_message
-            return Message(text=error_message)
+            self.log(error_message)
+            self.connection_string = None
+
+    def get_text(self) -> str:
+        """Return the connection string as text."""
+        if hasattr(self, 'connection_string') and self.connection_string:
+            return self.connection_string
+        return getattr(self, 'status', 'Unknown error')
