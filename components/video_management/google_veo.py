@@ -1,7 +1,7 @@
 import time
 from langflow.custom import Component
 from langflow.io import StrInput, MultilineInput, SecretStrInput, Output, DropdownInput
-from langflow.schema import Data
+from langflow.schema import Data, Message
 
 from google import genai
 from google.genai import types
@@ -26,10 +26,11 @@ class GoogleVeoVideoGenerator(Component):
             display_name="Model",
             info="Veo model to use for video generation",
             options=[
-                "veo-2.0-generate-001",  # Requires GCP billing
-                "models/veo-2.0-generate-001",  # Full format
+                "veo-3.0-generate-preview",  # Latest Veo 3.0 model
+                "veo-2.0-generate-001",  # Veo 2.0 model (requires GCP billing)
+                "models/veo-2.0-generate-001",  # Full format for Veo 2.0
             ],
-            value="veo-001",  # Default to version that may not require billing
+            value="veo-2.0-generate-001",  # Default to latest Veo 3.0
         ),
         MultilineInput(
             name="prompt",
@@ -61,6 +62,7 @@ class GoogleVeoVideoGenerator(Component):
 
     outputs = [
         Output(name="video_data", display_name="Video Data", method="build"),
+        Output(name="playground_video", display_name="Playground Video", method="generate_playground_video"),
     ]
 
     def build(self) -> Data:
@@ -131,5 +133,43 @@ class GoogleVeoVideoGenerator(Component):
                 "error": error_message,
                 "model_attempted": self.model,
                 "video_count": 0,
-                "suggestion": "Try a different model if this one requires GCP billing"
+                "suggestion": "Try using veo-3.0-generate-001 for the latest model, or check your API key and billing setup"
             })
+
+    def generate_playground_video(self) -> Message:
+        """Generate HTML video player code for the generated video."""
+        try:
+            # First, generate the video using the build method
+            video_result = self.build()
+            
+            # Check if video generation was successful
+            if hasattr(video_result, 'data') and isinstance(video_result.data, dict):
+                if 'error' in video_result.data:
+                    return Message(text=f"Error: {video_result.data['error']}")
+                
+                # Get the primary video URL
+                video_url = video_result.data.get('video_url')
+                if not video_url:
+                    return Message(text="Error: No video URL generated")
+                
+                # Determine aspect ratio for dimensions
+                aspect_ratio = self.aspect_ratio
+                if aspect_ratio == "16:9":
+                    width, height = 640, 360
+                elif aspect_ratio == "9:16":
+                    width, height = 360, 640
+                else:
+                    width, height = 640, 360  # Default to 16:9
+                
+                # Generate HTML video player code
+                html_code = f'<video width="{width}" height="{height}" controls>\n  <source src="{video_url}">\n</video>'
+                
+                self.status = f"Generated playground video HTML for {aspect_ratio} aspect ratio"
+                return Message(text=html_code)
+            else:
+                return Message(text="Error: Invalid video generation result")
+                
+        except Exception as e:
+            error_msg = f"Error generating playground video: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")

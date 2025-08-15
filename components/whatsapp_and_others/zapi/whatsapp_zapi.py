@@ -55,8 +55,9 @@ class APIRequestComponent(Component):
             info="Select the type of operation to perform.",
             options=[
                 {"name": "Text", "icon": "text"},
-                {"name": "Audio", "icon": "volume"},
-                {"name": "Video", "icon": "video"},
+                {"name": "Audio", "icon": "audio-lines"},
+                {"name": "Image", "icon": "image"},
+                {"name": "Video", "icon": "clapperboard"},
                 {"name": "Document", "icon": "file-text"},
                 {"name": "Button List", "icon": "list"},
                 {"name": "Get Groups", "icon": "users"},
@@ -81,6 +82,18 @@ class APIRequestComponent(Component):
             name="audio",
             display_name="Audio URL/Base64",
             info="Audio URL or Base64 to send (if type is audio).",
+            show=False
+        ),
+        MessageTextInput(
+            name="image",
+            display_name="Image URL/Base64",
+            info="Image URL or Base64 to send (if type is image).",
+            show=False
+        ),
+        MessageTextInput(
+            name="image_caption",
+            display_name="Image Caption",
+            info="Caption for the image (optional).",
             show=False
         ),
         MessageTextInput(
@@ -142,7 +155,7 @@ class APIRequestComponent(Component):
         ),
     ]
 
-    field_order = ["trigger", "zapi_instance", "zapi_token", "zapi_client_token", "type", "phone", "message", "audio", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
+    field_order = ["trigger", "zapi_instance", "zapi_token", "zapi_client_token", "type", "phone", "message", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
 
     outputs = [
         Output(display_name="API Response", name="api_response", method="send_request"),
@@ -159,6 +172,7 @@ class APIRequestComponent(Component):
         field_map = {
             "Text": ["phone", "message"],
             "Audio": ["phone", "audio"],
+            "Image": ["phone", "image", "image_caption"],
             "Video": ["phone", "video", "caption"],
             "Document": ["phone", "document", "fileName", "extension"],
             "Button List": ["phone", "message", "buttonList"],
@@ -166,7 +180,7 @@ class APIRequestComponent(Component):
         }
 
         # Hide all dynamic fields first
-        for field_name in ["phone", "message", "audio", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]:
+        for field_name in ["phone", "message", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]:
             if field_name in build_config:
                 build_config[field_name]["show"] = False
 
@@ -238,6 +252,14 @@ class APIRequestComponent(Component):
                 "audio": self.audio,
                 "viewOnce": False,
                 "waveform": True
+            }
+        elif message_type == "Image":
+            url = f"https://api.z-api.io/instances/{instance}/token/{token}/send-image"
+            payload = {
+                "phone": phone,
+                "image": self.image,
+                "caption": getattr(self, 'image_caption', ''),
+                "viewOnce": False
             }
         elif message_type == "Video":
             url = f"https://api.z-api.io/instances/{instance}/token/{token}/send-video"
@@ -335,6 +357,8 @@ class APIRequestComponent(Component):
                     "message_type": message_type or "unknown",
                     "message": getattr(self, 'message', None),
                     "audio": getattr(self, 'audio', None),
+                    "image": getattr(self, 'image', None),
+                    "image_caption": getattr(self, 'image_caption', None),
                     "video": getattr(self, 'video', None),
                     "caption": getattr(self, 'caption', None),
                     "document": getattr(self, 'document', None),

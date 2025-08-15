@@ -19,6 +19,7 @@ class HubSpotComponent(Component):
             display_name="Trigger",
             info="Trigger to execute the HubSpot action. Connect any component output here to trigger the action.",
             required=False,
+            advanced=True,
         ),
         SecretStrInput(
             name="api_key",
@@ -95,12 +96,12 @@ Get available properties using 'Get Deal Properties' action."""
 
 Get available properties using 'Get Company Properties' action."""
         ),
-        DictInput(
+        DataInput(
             name="contact_properties",
             display_name="Contact Properties",
             show=False,
             tool_mode=True,
-            info="""Dictionary of contact properties. Common properties include:
+            info="""Paste a single JSON object with all contact data. Example:
 {
   "firstname": "John",
   "lastname": "Doe",
@@ -111,6 +112,7 @@ Get available properties using 'Get Company Properties' action."""
   "lifecyclestage": "lead"
 }
 
+Tip: You can also provide {\"properties\": { ... }}; both formats are accepted.
 Get available properties using 'Get Contact Properties' action."""
         ),
         StrInput(
@@ -349,16 +351,58 @@ Get available properties using 'Get Contact Properties' action."""
         return Data(data=company)
 
     def create_contact(self, headers, properties):
-        """Create a new contact"""
+        """Create a new contact. Accepts a JSON string or dict with the contact properties."""
         if not properties:
             return Data(data={"error": "Contact properties are required"})
-        
+
+        # Unwrap DataInput/Data objects to raw payload
+        if hasattr(properties, 'data'):
+            try:
+                properties = properties.data
+                # Some Data wrappers may nest another Data
+                if hasattr(properties, 'data'):
+                    properties = properties.data
+            except Exception:
+                pass
+
+        # Unwrap text content if it comes from a Message-like object
+        if hasattr(properties, 'content'):
+            properties = properties.content
+        elif hasattr(properties, 'text'):
+            properties = properties.text
+        elif hasattr(properties, 'message'):
+            properties = properties.message
+
+        # Parse when provided as JSON string
+        if isinstance(properties, str):
+            try:
+                parsed = json.loads(properties)
+            except json.JSONDecodeError as exc:
+                return Data(data={"error": f"Invalid JSON in Contact Properties: {str(exc)}"})
+        elif isinstance(properties, dict):
+            parsed = properties
+        else:
+            return Data(data={"error": "Contact Properties must be a JSON string or a dictionary"})
+
+        # Support both { ... } and { "properties": { ... } } formats
+        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
+            properties_dict = parsed["properties"]
+        else:
+            properties_dict = parsed
+
+        # Normalize if wrapped like {"data": {...}}
+        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
+            properties_dict = properties_dict["data"]
+
+        if not isinstance(properties_dict, dict) or not properties_dict:
+            return Data(data={"error": "Contact Properties JSON must describe a non-empty object"})
+
         url = f"{self.base_url}/crm/v3/objects/contacts"
-        payload = {"properties": properties}
-        
+        payload = {"properties": properties_dict}
+
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        
+
         contact = response.json()
         self.status = f"Contact created with ID: {contact.get('id')}"
         return Data(data=contact)
@@ -527,18 +571,60 @@ Get available properties using 'Get Contact Properties' action."""
         return Data(data=company)
 
     def update_contact(self, headers, contact_id, properties):
-        """Update a contact"""
+        """Update a contact. Accepts a JSON string or dict with the contact properties."""
         if not self.is_valid_id(contact_id):
             return Data(data={"error": "Contact ID is required"})
         if not properties:
             return Data(data={"error": "Contact properties are required"})
-        
+
+        # Unwrap DataInput/Data objects to raw payload
+        if hasattr(properties, 'data'):
+            try:
+                properties = properties.data
+                # Some Data wrappers may nest another Data
+                if hasattr(properties, 'data'):
+                    properties = properties.data
+            except Exception:
+                pass
+
+        # Unwrap text content if it comes from a Message-like object
+        if hasattr(properties, 'content'):
+            properties = properties.content
+        elif hasattr(properties, 'text'):
+            properties = properties.text
+        elif hasattr(properties, 'message'):
+            properties = properties.message
+
+        # Parse when provided as JSON string
+        if isinstance(properties, str):
+            try:
+                parsed = json.loads(properties)
+            except json.JSONDecodeError as exc:
+                return Data(data={"error": f"Invalid JSON in Contact Properties: {str(exc)}"})
+        elif isinstance(properties, dict):
+            parsed = properties
+        else:
+            return Data(data={"error": "Contact Properties must be a JSON string or a dictionary"})
+
+        # Support both { ... } and { "properties": { ... } } formats
+        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
+            properties_dict = parsed["properties"]
+        else:
+            properties_dict = parsed
+
+        # Normalize if wrapped like {"data": {...}}
+        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
+            properties_dict = properties_dict["data"]
+
+        if not isinstance(properties_dict, dict) or not properties_dict:
+            return Data(data={"error": "Contact Properties JSON must describe a non-empty object"})
+
         url = f"{self.base_url}/crm/v3/objects/contacts/{contact_id}"
-        payload = {"properties": properties}
-        
+        payload = {"properties": properties_dict}
+
         response = requests.patch(url, headers=headers, json=payload)
         response.raise_for_status()
-        
+
         contact = response.json()
         self.status = f"Contact updated: {contact.get('properties', {}).get('firstname', 'N/A')} {contact.get('properties', {}).get('lastname', 'N/A')}"
         return Data(data=contact)

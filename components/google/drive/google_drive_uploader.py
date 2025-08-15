@@ -214,7 +214,13 @@ class GoogleDriveUploader(Component):
                 mime_type = "audio/mpeg"
                 file_data = self.file_content
                 if isinstance(file_data, str):
-                    raise ValueError("Audio data must be passed as bytes, not string.")
+                    # Se for string, assume que é base64
+                    try:
+                        file_data = base64.b64decode(file_data)
+                    except Exception as e:
+                        raise ValueError(f"Invalid base64 data for MP3: {str(e)}")
+                elif not isinstance(file_data, bytes):
+                    raise ValueError("Audio data must be passed as base64 string or bytes.")
             else:
                 raise ValueError("Unsupported file type.")
 

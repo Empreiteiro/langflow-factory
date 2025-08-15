@@ -36,7 +36,7 @@ class OpenAIVideoGenerator(Component):
             required=True
         ),
         SecretStrInput(
-            name="opaneai_api_key",
+            name="api_key",
             display_name="OpenAI API Key",
             info="Your OpenAI API key with access to the video generation endpoint.",
             required=True
