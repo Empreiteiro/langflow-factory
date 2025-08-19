@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import StrInput, DictInput, SecretStrInput, Output, DataInput, IntInput, BoolInput
+from langflow.io import StrInput, DictInput, SecretStrInput, Output, DataInput, IntInput
 from langflow.inputs import SortableListInput
 from langflow.schema import Data
 from langflow.utils.component_utils import set_field_display
@@ -59,12 +59,13 @@ class HubSpotComponent(Component):
             limit=1,
         ),
         # Dynamic inputs per action (initially hidden)
-        DataInput(
+        DictInput(
             name="deal_properties",
             display_name="Deal Properties",
             show=False,
             tool_mode=True,
-            info="""Connect a single JSON object with all deal data. Example:
+            is_list=True,
+            info="""Dictionary of deal properties. Common properties include:
 {
   "dealname": "Q1 2025 Sales Deal",
   "amount": "50000",
@@ -74,15 +75,14 @@ class HubSpotComponent(Component):
   "description": "Enterprise software deal"
 }
 
-Tip: You can also provide {\"properties\": { ... }}; both formats are accepted.
 Get available properties using 'Get Deal Properties' action."""
         ),
-        DataInput(
+        DictInput(
             name="company_properties",
             display_name="Company Properties",
             show=False,
             tool_mode=True,
-            info="""Connect a single JSON object with all company data. Example:
+            info="""Dictionary of company properties. Common properties include:
 {
   "name": "Acme Corporation",
   "domain": "acme.com",
@@ -94,7 +94,6 @@ Get available properties using 'Get Deal Properties' action."""
   "description": "Leading software company"
 }
 
-Tip: You can also provide {\"properties\": { ... }}; both formats are accepted.
 Get available properties using 'Get Company Properties' action."""
         ),
         DataInput(
@@ -102,7 +101,7 @@ Get available properties using 'Get Company Properties' action."""
             display_name="Contact Properties",
             show=False,
             tool_mode=True,
-            info="""Connect a single JSON object with all contact data. Example:
+            info="""Paste a single JSON object with all contact data. Example:
 {
   "firstname": "John",
   "lastname": "Doe",
@@ -151,14 +150,6 @@ Get available properties using 'Get Contact Properties' action."""
             tool_mode=True,
             info="Maximum number of results to return (default: 100)."
         ),
-        BoolInput(
-            name="show_only_required",
-            display_name="Show Only Required Fields",
-            show=False,
-            tool_mode=True,
-            info="When enabled, only shows required/obligatory fields in property lists.",
-            value=False,
-        ),
     ]
 
     outputs = [
@@ -193,9 +184,9 @@ Get available properties using 'Get Contact Properties' action."""
             "Delete Deal": ["deal_id"],
             "Delete Company": ["company_id"],
             "Delete Contact": ["contact_id"],
-            "Get Deal Properties": ["show_only_required"],
-            "Get Company Properties": ["show_only_required"],
-            "Get Contact Properties": ["show_only_required"],
+            "Get Deal Properties": [],
+            "Get Company Properties": [],
+            "Get Contact Properties": [],
         }
 
         # Hide all dynamic fields first
@@ -330,54 +321,12 @@ Get available properties using 'Get Contact Properties' action."""
             return Data(data={"error": error_msg})
 
     def create_deal(self, headers, properties):
-        """Create a new deal. Accepts a JSON string or dict with the deal properties."""
+        """Create a new deal"""
         if not properties:
             return Data(data={"error": "Deal properties are required"})
-
-        # Unwrap DataInput/Data objects to raw payload
-        if hasattr(properties, 'data'):
-            try:
-                properties = properties.data
-                # Some Data wrappers may nest another Data
-                if hasattr(properties, 'data'):
-                    properties = properties.data
-            except Exception:
-                pass
-
-        # Unwrap text content if it comes from a Message-like object
-        if hasattr(properties, 'content'):
-            properties = properties.content
-        elif hasattr(properties, 'text'):
-            properties = properties.text
-        elif hasattr(properties, 'message'):
-            properties = properties.message
-
-        # Parse when provided as JSON string
-        if isinstance(properties, str):
-            try:
-                parsed = json.loads(properties)
-            except json.JSONDecodeError as exc:
-                return Data(data={"error": f"Invalid JSON in Deal Properties: {str(exc)}"})
-        elif isinstance(properties, dict):
-            parsed = properties
-        else:
-            return Data(data={"error": "Deal Properties must be a JSON string or a dictionary"})
-
-        # Support both { ... } and { "properties": { ... } } formats
-        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
-            properties_dict = parsed["properties"]
-        else:
-            properties_dict = parsed
-
-        # Normalize if wrapped like {"data": {...}}
-        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
-            properties_dict = properties_dict["data"]
-
-        if not isinstance(properties_dict, dict) or not properties_dict:
-            return Data(data={"error": "Deal Properties JSON must describe a non-empty object"})
-
+        
         url = f"{self.base_url}/crm/v3/objects/deals"
-        payload = {"properties": properties_dict}
+        payload = {"properties": properties}
         
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
@@ -387,54 +336,12 @@ Get available properties using 'Get Contact Properties' action."""
         return Data(data=deal)
 
     def create_company(self, headers, properties):
-        """Create a new company. Accepts a JSON string or dict with the company properties."""
+        """Create a new company"""
         if not properties:
             return Data(data={"error": "Company properties are required"})
-
-        # Unwrap DataInput/Data objects to raw payload
-        if hasattr(properties, 'data'):
-            try:
-                properties = properties.data
-                # Some Data wrappers may nest another Data
-                if hasattr(properties, 'data'):
-                    properties = properties.data
-            except Exception:
-                pass
-
-        # Unwrap text content if it comes from a Message-like object
-        if hasattr(properties, 'content'):
-            properties = properties.content
-        elif hasattr(properties, 'text'):
-            properties = properties.text
-        elif hasattr(properties, 'message'):
-            properties = properties.message
-
-        # Parse when provided as JSON string
-        if isinstance(properties, str):
-            try:
-                parsed = json.loads(properties)
-            except json.JSONDecodeError as exc:
-                return Data(data={"error": f"Invalid JSON in Company Properties: {str(exc)}"})
-        elif isinstance(properties, dict):
-            parsed = properties
-        else:
-            return Data(data={"error": "Company Properties must be a JSON string or a dictionary"})
-
-        # Support both { ... } and { "properties": { ... } } formats
-        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
-            properties_dict = parsed["properties"]
-        else:
-            properties_dict = parsed
-
-        # Normalize if wrapped like {"data": {...}}
-        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
-            properties_dict = properties_dict["data"]
-
-        if not isinstance(properties_dict, dict) or not properties_dict:
-            return Data(data={"error": "Company Properties JSON must describe a non-empty object"})
-
+        
         url = f"{self.base_url}/crm/v3/objects/companies"
-        payload = {"properties": properties_dict}
+        payload = {"properties": properties}
         
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
@@ -630,56 +537,14 @@ Get available properties using 'Get Contact Properties' action."""
         return Data(data=contacts)
 
     def update_deal(self, headers, deal_id, properties):
-        """Update a deal. Accepts a JSON string or dict with the deal properties."""
+        """Update a deal"""
         if not self.is_valid_id(deal_id):
             return Data(data={"error": "Deal ID is required"})
         if not properties:
             return Data(data={"error": "Deal properties are required"})
-
-        # Unwrap DataInput/Data objects to raw payload
-        if hasattr(properties, 'data'):
-            try:
-                properties = properties.data
-                # Some Data wrappers may nest another Data
-                if hasattr(properties, 'data'):
-                    properties = properties.data
-            except Exception:
-                pass
-
-        # Unwrap text content if it comes from a Message-like object
-        if hasattr(properties, 'content'):
-            properties = properties.content
-        elif hasattr(properties, 'text'):
-            properties = properties.text
-        elif hasattr(properties, 'message'):
-            properties = properties.message
-
-        # Parse when provided as JSON string
-        if isinstance(properties, str):
-            try:
-                parsed = json.loads(properties)
-            except json.JSONDecodeError as exc:
-                return Data(data={"error": f"Invalid JSON in Deal Properties: {str(exc)}"})
-        elif isinstance(properties, dict):
-            parsed = properties
-        else:
-            return Data(data={"error": "Deal Properties must be a JSON string or a dictionary"})
-
-        # Support both { ... } and { "properties": { ... } } formats
-        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
-            properties_dict = parsed["properties"]
-        else:
-            properties_dict = parsed
-
-        # Normalize if wrapped like {"data": {...}}
-        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
-            properties_dict = properties_dict["data"]
-
-        if not isinstance(properties_dict, dict) or not properties_dict:
-            return Data(data={"error": "Deal Properties JSON must describe a non-empty object"})
-
+        
         url = f"{self.base_url}/crm/v3/objects/deals/{deal_id}"
-        payload = {"properties": properties_dict}
+        payload = {"properties": properties}
         
         response = requests.patch(url, headers=headers, json=payload)
         response.raise_for_status()
@@ -689,56 +554,14 @@ Get available properties using 'Get Contact Properties' action."""
         return Data(data=deal)
 
     def update_company(self, headers, company_id, properties):
-        """Update a company. Accepts a JSON string or dict with the company properties."""
+        """Update a company"""
         if not self.is_valid_id(company_id):
             return Data(data={"error": "Company ID is required"})
         if not properties:
             return Data(data={"error": "Company properties are required"})
-
-        # Unwrap DataInput/Data objects to raw payload
-        if hasattr(properties, 'data'):
-            try:
-                properties = properties.data
-                # Some Data wrappers may nest another Data
-                if hasattr(properties, 'data'):
-                    properties = properties.data
-            except Exception:
-                pass
-
-        # Unwrap text content if it comes from a Message-like object
-        if hasattr(properties, 'content'):
-            properties = properties.content
-        elif hasattr(properties, 'text'):
-            properties = properties.text
-        elif hasattr(properties, 'message'):
-            properties = properties.message
-
-        # Parse when provided as JSON string
-        if isinstance(properties, str):
-            try:
-                parsed = json.loads(properties)
-            except json.JSONDecodeError as exc:
-                return Data(data={"error": f"Invalid JSON in Company Properties: {str(exc)}"})
-        elif isinstance(properties, dict):
-            parsed = properties
-        else:
-            return Data(data={"error": "Company Properties must be a JSON string or a dictionary"})
-
-        # Support both { ... } and { "properties": { ... } } formats
-        if isinstance(parsed, dict) and "properties" in parsed and isinstance(parsed["properties"], dict):
-            properties_dict = parsed["properties"]
-        else:
-            properties_dict = parsed
-
-        # Normalize if wrapped like {"data": {...}}
-        if isinstance(properties_dict, dict) and "data" in properties_dict and isinstance(properties_dict["data"], dict):
-            properties_dict = properties_dict["data"]
-
-        if not isinstance(properties_dict, dict) or not properties_dict:
-            return Data(data={"error": "Company Properties JSON must describe a non-empty object"})
-
+        
         url = f"{self.base_url}/crm/v3/objects/companies/{company_id}"
-        payload = {"properties": properties_dict}
+        payload = {"properties": properties}
         
         response = requests.patch(url, headers=headers, json=payload)
         response.raise_for_status()
@@ -854,29 +677,13 @@ Get available properties using 'Get Contact Properties' action."""
         # Extract only essential information
         simplified_properties = []
         for prop in results:
-            # Check if we should filter for required fields only
-            if hasattr(self, 'show_only_required') and self.show_only_required:
-                # Only include properties that are required (not optional)
-                if prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False:
-                    simplified_properties.append({
-                        "name": prop.get("name"),
-                        "label": prop.get("label"),
-                        "type": prop.get("type"),
-                        "required": True,
-                        "description": prop.get("description", "")
-                    })
-            else:
-                # Include all properties
-                simplified_properties.append({
-                    "name": prop.get("name"),
-                    "label": prop.get("label"),
-                    "type": prop.get("type"),
-                    "required": prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False,
-                    "description": prop.get("description", "")
-                })
+            simplified_properties.append({
+                "name": prop.get("name"),
+                "label": prop.get("label"),
+                "type": prop.get("type")
+            })
         
-        filter_status = "required fields only" if (hasattr(self, 'show_only_required') and self.show_only_required) else "all fields"
-        self.status = f"Retrieved {len(simplified_properties)} deal properties ({filter_status})"
+        self.status = f"Retrieved {len(simplified_properties)} deal properties"
         return Data(data={"properties": simplified_properties})
 
     def get_company_properties(self, headers):
@@ -891,29 +698,13 @@ Get available properties using 'Get Contact Properties' action."""
         # Extract only essential information
         simplified_properties = []
         for prop in results:
-            # Check if we should filter for required fields only
-            if hasattr(self, 'show_only_required') and self.show_only_required:
-                # Only include properties that are required (not optional)
-                if prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False:
-                    simplified_properties.append({
-                        "name": prop.get("name"),
-                        "label": prop.get("label"),
-                        "type": prop.get("type"),
-                        "required": True,
-                        "description": prop.get("description", "")
-                    })
-            else:
-                # Include all properties
-                simplified_properties.append({
-                    "name": prop.get("name"),
-                    "label": prop.get("label"),
-                    "type": prop.get("type"),
-                    "required": prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False,
-                    "description": prop.get("description", "")
-                })
+            simplified_properties.append({
+                "name": prop.get("name"),
+                "label": prop.get("label"),
+                "type": prop.get("type")
+            })
         
-        filter_status = "required fields only" if (hasattr(self, 'show_only_required') and self.show_only_required) else "all fields"
-        self.status = f"Retrieved {len(simplified_properties)} company properties ({filter_status})"
+        self.status = f"Retrieved {len(simplified_properties)} company properties"
         return Data(data={"properties": simplified_properties})
 
     def get_contact_properties(self, headers):
@@ -928,27 +719,11 @@ Get available properties using 'Get Contact Properties' action."""
         # Extract only essential information
         simplified_properties = []
         for prop in results:
-            # Check if we should filter for required fields only
-            if hasattr(self, 'show_only_required') and self.show_only_required:
-                # Only include properties that are required (not optional)
-                if prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False:
-                    simplified_properties.append({
-                        "name": prop.get("name"),
-                        "label": prop.get("label"),
-                        "type": prop.get("type"),
-                        "required": True,
-                        "description": prop.get("description", "")
-                    })
-            else:
-                # Include all properties
-                simplified_properties.append({
-                    "name": prop.get("name"),
-                    "label": prop.get("label"),
-                    "type": prop.get("type"),
-                    "required": prop.get("modificationMetadata", {}).get("readOnlyValue") is False and prop.get("modificationMetadata", {}).get("readOnlyDefinition") is False,
-                    "description": prop.get("description", "")
-                })
+            simplified_properties.append({
+                "name": prop.get("name"),
+                "label": prop.get("label"),
+                "type": prop.get("type")
+            })
         
-        filter_status = "required fields only" if (hasattr(self, 'show_only_required') and self.show_only_required) else "all fields"
-        self.status = f"Retrieved {len(simplified_properties)} contact properties ({filter_status})"
+        self.status = f"Retrieved {len(simplified_properties)} contact properties"
         return Data(data={"properties": simplified_properties})
