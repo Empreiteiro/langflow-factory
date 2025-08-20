@@ -163,16 +163,23 @@ class ChatInput(ChatComponent):
             if not parsed_url.scheme:
                 raise ValueError("Invalid URL: missing scheme (http/https)")
             
+            self.log(f"Downloading {media_type} from URL: {url}")
+            
             # Handle different URL types
             if "youtube.com" in url or "youtu.be" in url:
+                self.log("Detected YouTube URL, using yt-dlp downloader")
                 return self.download_youtube_media(url, media_type)
             elif "drive.google.com" in url:
+                self.log("Detected Google Drive URL, using direct downloader")
                 return self.download_google_drive_media(url)
             else:
+                self.log("Detected direct URL, using requests downloader")
                 return self.download_direct_url(url, media_type)
                 
         except Exception as e:
-            raise RuntimeError(f"Failed to download media from URL: {str(e)}")
+            error_msg = f"Failed to download media from URL: {str(e)}"
+            self.log(f"Download error: {error_msg}")
+            raise RuntimeError(error_msg)
 
     def download_direct_url(self, url: str, media_type: str) -> str:
         """Download media from direct URL."""
@@ -233,12 +240,29 @@ class ChatInput(ChatComponent):
                     }],
                 }
             else:  # Video
+                # Use more flexible format selection for videos
                 ydl_opts = {
-                    'format': 'best[ext=mp4]',
+                    'format': 'best[height<=1080]/best',  # Prefer 1080p or lower, fallback to best available
                     'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                    'ignoreerrors': True,  # Continue on download errors
+                    'no_warnings': True,   # Reduce noise in logs
                 }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # First, try to get available formats to debug
+                try:
+                    info = ydl.extract_info(url, download=False)
+                    available_formats = info.get('formats', [])
+                    if not available_formats:
+                        raise RuntimeError("No formats available for this video")
+                    
+                    # Log available formats for debugging (optional)
+                    self.log(f"Available formats: {len(available_formats)} formats found")
+                    
+                except Exception as format_error:
+                    self.log(f"Warning: Could not extract format info: {format_error}")
+                
+                # Proceed with download
                 ydl.download([url])
             
             # Find downloaded file
@@ -251,7 +275,19 @@ class ChatInput(ChatComponent):
         except ImportError:
             raise RuntimeError("yt-dlp not installed. Install with: pip install yt-dlp")
         except Exception as e:
-            raise RuntimeError(f"Failed to download from YouTube: {str(e)}")
+            # Clean up temp directory on error
+            try:
+                if 'temp_dir' in locals():
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+            
+            # Provide more helpful error message
+            error_msg = str(e)
+            if "Requested format is not available" in error_msg:
+                raise RuntimeError(f"YouTube format error: {error_msg}. Try using a different video or check if the video is available.")
+            else:
+                raise RuntimeError(f"Failed to download from YouTube: {error_msg}")
 
     def download_google_drive_media(self, url: str) -> str:
         """Download media from Google Drive URL."""

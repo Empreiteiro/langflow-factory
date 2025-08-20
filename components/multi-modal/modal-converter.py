@@ -1,11 +1,16 @@
 from typing import Any
 import base64
 import requests
+import time
 from openai import OpenAI
 
 from langflow.custom import Component
 from langflow.io import HandleInput, Output, TabInput, MessageTextInput, SecretStrInput, DropdownInput, IntInput
 from langflow.schema import Data, Message
+
+# Import Google GenAI for Veo video generation
+from google import genai
+from google.genai import types
 
 
 class ModalConverterComponent(Component):
@@ -29,20 +34,37 @@ class ModalConverterComponent(Component):
             real_time_refresh=True,
             value="Audio",
         ),
+        # Model provider for Audio and Image 
         DropdownInput(
-            name="model_provider",
+            name="audio_image_provider",
             display_name="Model Provider",
             options=["OpenAI"],
             value="OpenAI",
-            info="Select the AI model provider for processing",
             real_time_refresh=True,
             show=False,
             options_metadata=[{"icon": "OpenAI"}],
+        ),
+        # Model provider for Video
+        DropdownInput(
+            name="video_provider",
+            display_name="Model Provider",
+            options=["Google Generative AI"],
+            value="Google Generative AI",
+            real_time_refresh=True,
+            show=False,
+            options_metadata=[{"icon": "GoogleGenerativeAI"}],
         ),
         SecretStrInput(
             name="openai_api_key",
             display_name="OpenAI API Key",
             info="Your OpenAI API key for generating audio, images, and videos",
+            required=True,
+            show=False,
+        ),
+        SecretStrInput(
+            name="gemini_api_key",
+            display_name="Gemini API Key",
+            info="Your Google Gemini API key for generating videos with Veo",
             required=True,
             show=False,
         ),
@@ -97,6 +119,32 @@ class ModalConverterComponent(Component):
             display_name="Number of Images",
             value=1,
             info="Number of images to generate",
+            advanced=True,
+            show=False,
+        ),
+        # Video-specific options for Google Veo
+        DropdownInput(
+            name="video_model",
+            display_name="Model",
+            options=[
+                "veo-3.0-generate-preview",  # Latest Veo 3.0 model
+                "veo-2.0-generate-001",  # Veo 2.0 model (requires GCP billing)
+                "models/veo-2.0-generate-001",  # Full format for Veo 2.0
+            ],
+            value="veo-3.0-generate-preview",
+            info="Veo model to use for video generation",
+            advanced=True,
+            show=False,
+        ),
+        DropdownInput(
+            name="aspect_ratio",
+            display_name="Aspect Ratio",
+            options=[
+                "16:9",  # Widescreen
+                "9:16",  # Portrait/Vertical
+            ],
+            value="16:9",
+            info="Video format ratio",
             advanced=True,
             show=False,
         ),
@@ -169,6 +217,20 @@ class ModalConverterComponent(Component):
                         method="generate_video",
                     ).to_dict()
                 )
+                frontend_node["outputs"].append(
+                    Output(
+                        display_name="Video URLs",
+                        name="video_urls",
+                        method="generate_video_urls",
+                    ).to_dict()
+                )
+                frontend_node["outputs"].append(
+                    Output(
+                        display_name="Playground Video",
+                        name="playground_video",
+                        method="generate_playground_video",
+                    ).to_dict()
+                )
 
         return frontend_node
 
@@ -179,13 +241,13 @@ class ModalConverterComponent(Component):
 
             # Define field visibility map
             field_map = {
-                "Audio": ["model_provider", "openai_api_key", "voice", "audio_format", "speed"],
-                "Image": ["model_provider", "openai_api_key", "image_model", "image_size", "num_images"],
-                "Video": ["model_provider", "openai_api_key"],  # No specific fields for video yet
+                "Audio": ["audio_image_provider", "openai_api_key", "voice", "audio_format", "speed"],
+                "Image": ["audio_image_provider", "openai_api_key", "image_model", "image_size", "num_images"],
+                "Video": ["video_provider", "gemini_api_key", "video_model", "aspect_ratio"],
             }
 
             # Hide all dynamic fields first
-            for field_name in ["model_provider", "openai_api_key", "voice", "audio_format", "speed", "image_model", "image_size", "num_images"]:
+            for field_name in ["audio_image_provider", "video_provider", "openai_api_key", "gemini_api_key", "voice", "audio_format", "speed", "image_model", "image_size", "num_images", "video_model", "aspect_ratio"]:
                 if field_name in build_config:
                     build_config[field_name]["show"] = False
 
@@ -195,15 +257,22 @@ class ModalConverterComponent(Component):
                     if field_name in build_config:
                         build_config[field_name]["show"] = True
 
-        elif field_name == "model_provider":
-            # Update API key label based on provider
+        elif field_name == "audio_image_provider":
+            # For audio and image, always show OpenAI API key
             if field_value == "OpenAI":
                 build_config["openai_api_key"]["display_name"] = "OpenAI API Key"
-                build_config["openai_api_key"]["info"] = "Your OpenAI API key for generating audio, images, and videos"
-            # Future providers can be added here
-            # elif field_value == "Anthropic":
-            #     build_config["openai_api_key"]["display_name"] = "Anthropic API Key"
-            #     build_config["openai_api_key"]["info"] = "Your Anthropic API key for processing."
+                build_config["openai_api_key"]["info"] = "Your OpenAI API key for generating audio and images"
+                build_config["openai_api_key"]["show"] = True
+                if "gemini_api_key" in build_config:
+                    build_config["gemini_api_key"]["show"] = False
+
+        elif field_name == "video_provider":
+            # For video mode, only show gemini_api_key when Google Generative AI is selected
+            if field_value == "Google Generative AI":
+                if "gemini_api_key" in build_config:
+                    build_config["gemini_api_key"]["display_name"] = "Gemini API Key"
+                    build_config["gemini_api_key"]["info"] = "Your Google Gemini API key for generating videos with Veo"
+                    build_config["gemini_api_key"]["show"] = True
 
         return build_config
 
@@ -235,8 +304,14 @@ class ModalConverterComponent(Component):
         return str(input_value)
 
     def _get_api_key(self):
-        """Get OpenAI API key."""
-        api_key = self.openai_api_key
+        """Get API key based on selected provider and output type."""
+        # For video generation, always use Gemini API
+        if hasattr(self, 'output_type') and self.output_type == "Video":
+            api_key = self.gemini_api_key
+        else:
+            # For audio and image, always use OpenAI
+            api_key = self.openai_api_key
+            
         if hasattr(api_key, 'get_secret_value'):
             return api_key.get_secret_value()
         return str(api_key)
@@ -537,23 +612,161 @@ class ModalConverterComponent(Component):
             return Message(text=f"Error: {error_msg}")
 
     def generate_video(self) -> Data:
-        """Generate video from text (placeholder for future implementation)."""
+        """Generate video from text using Google Veo."""
         try:
             text = self._extract_text_from_input()
             if not text or not text.strip():
                 return Data(data={"error": "No text provided for video generation"})
-
-            # Placeholder for video generation
-            # TODO: Implement video generation when OpenAI video API is available
-            self.status = "Video generation not yet implemented"
-            self.log("Video generation requested but not yet implemented")
             
-            return Data(data={
-                "error": "Video generation is not yet implemented. This feature will be available when OpenAI releases their video generation API.",
-                "text": text[:100] + "..." if len(text) > 100 else text,
-            })
+            return self._generate_video_with_veo(text)
 
         except Exception as e:
             error_msg = f"Error generating video: {str(e)}"
             self.status = f"Error: {error_msg}"
             return Data(data={"error": error_msg})
+
+    def _generate_video_with_veo(self, text: str) -> Data:
+        """Generate video using Google Veo."""
+        try:
+            api_key = self._get_api_key()
+            model = getattr(self, 'video_model', 'veo-3.0-generate-preview') or 'veo-3.0-generate-preview'
+            aspect_ratio = getattr(self, 'aspect_ratio', '16:9') or '16:9'
+
+            # Create client with API key
+            client = genai.Client(api_key=api_key)
+
+            self.status = f"Generating video using {model} model..."
+            self.log(f"Making video generation request with model: {model}, aspect_ratio: {aspect_ratio}")
+
+            # Generate video using the selected model
+            operation = client.models.generate_videos(
+                model=model,
+                prompt=text,
+                config=types.GenerateVideosConfig(
+                    aspect_ratio=aspect_ratio,
+                ),
+            )
+
+            self.status = f"Waiting for video generation completion using {model}..."
+            
+            # Poll for completion with proper interval (20 seconds as per documentation)
+            while not operation.done:
+                time.sleep(20)
+                operation = client.operations.get(operation)
+
+            # Process generated videos
+            video_urls = []
+            video_data = []
+            
+            for n, generated_video in enumerate(operation.response.generated_videos):
+                if hasattr(generated_video, 'video') and generated_video.video:
+                    video_info = {
+                        "video_id": n,
+                        "video_object": generated_video.video
+                    }
+                    
+                    # Add URI if available (needs API key appended for download)
+                    if hasattr(generated_video.video, 'uri'):
+                        video_url = f"{generated_video.video.uri}&key={api_key}"
+                        video_info["video_uri"] = video_url
+                        video_urls.append(video_url)
+                    
+                    video_data.append(video_info)
+
+            if not video_data:
+                raise ValueError("No video was generated.")
+
+            self.status = f"Video(s) generated successfully using {model}. Total: {len(video_data)}"
+            
+            # Return the first video URL as main output, with detailed data available
+            primary_video_url = video_urls[0] if video_urls else None
+            
+            return Data(data={
+                "video_url": primary_video_url,  # Direct link to first video
+                "video_urls": video_urls,        # List of all links
+                "video_count": len(video_data),
+                "videos": video_data,            # Complete data
+                "model_used": model,             # Model used
+                "prompt_used": text,
+                "aspect_ratio": aspect_ratio,
+                "provider": "Gemini"
+            })
+
+        except Exception as e:
+            error_message = str(e)
+            self.status = f"Error with model {model}: {error_message}"
+            
+            # Provide helpful error info
+            return Data(data={
+                "error": error_message,
+                "model_attempted": model,
+                "video_count": 0,
+                "provider": "Gemini",
+                "suggestion": "Try using veo-3.0-generate-preview for the latest model, or check your API key and billing setup"
+            })
+
+    def generate_video_urls(self) -> Message:
+        """Generate video and return only the URLs as text message."""
+        try:
+            # First, generate the video using the main method
+            video_result = self.generate_video()
+            
+            # Check if video generation was successful
+            if hasattr(video_result, 'data') and isinstance(video_result.data, dict):
+                if 'error' in video_result.data:
+                    return Message(text=f"Error: {video_result.data['error']}")
+                
+                # Get video URLs
+                video_urls = video_result.data.get('video_urls', [])
+                if not video_urls:
+                    return Message(text="Error: No video URLs generated")
+                
+                # Return URLs as comma-separated text
+                urls_text = ", ".join(video_urls)
+                self.status = f"Generated {len(video_urls)} video URL(s) successfully!"
+                return Message(text=urls_text)
+            else:
+                return Message(text="Error: Invalid video generation result")
+                
+        except Exception as e:
+            error_msg = f"Error generating video URLs: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")
+
+    def generate_playground_video(self) -> Message:
+        """Generate HTML video player code for the generated video."""
+        try:
+            # First, generate the video using the main method
+            video_result = self.generate_video()
+            
+            # Check if video generation was successful
+            if hasattr(video_result, 'data') and isinstance(video_result.data, dict):
+                if 'error' in video_result.data:
+                    return Message(text=f"Error: {video_result.data['error']}")
+                
+                # Get the primary video URL
+                video_url = video_result.data.get('video_url')
+                if not video_url:
+                    return Message(text="Error: No video URL generated")
+                
+                # Determine aspect ratio for dimensions
+                aspect_ratio = getattr(self, 'aspect_ratio', '16:9') or '16:9'
+                if aspect_ratio == "16:9":
+                    width, height = 640, 360
+                elif aspect_ratio == "9:16":
+                    width, height = 360, 640
+                else:
+                    width, height = 640, 360  # Default to 16:9
+                
+                # Generate HTML video player code
+                html_code = f'<video width="{width}" height="{height}" controls>\n  <source src="{video_url}">\n</video>'
+                
+                self.status = f"Generated playground video HTML for {aspect_ratio} aspect ratio"
+                return Message(text=html_code)
+            else:
+                return Message(text="Error: Invalid video generation result")
+                
+        except Exception as e:
+            error_msg = f"Error generating playground video: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")
