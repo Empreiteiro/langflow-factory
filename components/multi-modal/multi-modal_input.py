@@ -21,6 +21,7 @@ SUPPORTED MEDIA SOURCES:
 - Google Drive public links
 """
 
+from langflow.custom import Component
 from langflow.base.data.utils import IMG_FILE_TYPES, TEXT_FILE_TYPES
 from langflow.base.io.chat import ChatComponent
 from langflow.inputs.inputs import BoolInput
@@ -50,11 +51,11 @@ import urllib.parse
 from urllib.parse import urlparse
 
 
-class ChatInput(ChatComponent):
+class MultiModalInputComponent(Component):
     display_name = "Multi-modal Input"
     description = "Receives audio, video, or image input and transforms it into text using AI analysis."
     icon = "repeat"
-    name = "ChatInput"
+    name = "Multi-modal Input"
     minimized = True
 
     inputs = [
@@ -167,8 +168,18 @@ class ChatInput(ChatComponent):
             
             # Handle different URL types
             if "youtube.com" in url or "youtu.be" in url:
-                self.log("Detected YouTube URL, using yt-dlp downloader")
-                return self.download_youtube_media(url, media_type)
+                self.log("Detected YouTube URL, attempting to use yt-dlp downloader")
+                try:
+                    return self.download_youtube_media(url, media_type)
+                except ImportError:
+                    self.log("yt-dlp not available, falling back to direct download (may not work for YouTube)")
+                    # For YouTube URLs, direct download usually doesn't work, but we can try
+                    return self.download_direct_url(url, media_type)
+                except Exception as e:
+                    self.log(f"YouTube download failed: {e}")
+                    # Try direct download as fallback
+                    self.log("Attempting direct download as fallback...")
+                    return self.download_direct_url(url, media_type)
             elif "drive.google.com" in url:
                 self.log("Detected Google Drive URL, using direct downloader")
                 return self.download_google_drive_media(url)
@@ -228,6 +239,7 @@ class ChatInput(ChatComponent):
             import yt_dlp
             
             temp_dir = tempfile.mkdtemp()
+            self.log(f"Created temporary directory: {temp_dir}")
             
             if media_type == "Audio":
                 ydl_opts = {
@@ -238,39 +250,72 @@ class ChatInput(ChatComponent):
                         'preferredcodec': 'mp3',
                         'preferredquality': '192',
                     }],
+                    'ignoreerrors': True,
+                    'no_warnings': False,  # Enable warnings for debugging
+                    'verbose': True,  # Enable verbose output for debugging
                 }
             else:  # Video
                 # Use more flexible format selection for videos
                 ydl_opts = {
-                    'format': 'best[height<=1080]/best',  # Prefer 1080p or lower, fallback to best available
+                    'format': 'best[height<=1080]/best[ext=mp4]/best',  # More flexible format selection
                     'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                    'ignoreerrors': True,  # Continue on download errors
-                    'no_warnings': True,   # Reduce noise in logs
+                    'ignoreerrors': True,
+                    'no_warnings': False,  # Enable warnings for debugging
+                    'verbose': True,  # Enable verbose output for debugging
                 }
+            
+            self.log(f"YouTube download options: {ydl_opts}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # First, try to get available formats to debug
                 try:
+                    self.log("Extracting video information...")
                     info = ydl.extract_info(url, download=False)
                     available_formats = info.get('formats', [])
                     if not available_formats:
                         raise RuntimeError("No formats available for this video")
                     
-                    # Log available formats for debugging (optional)
+                    # Log available formats for debugging
                     self.log(f"Available formats: {len(available_formats)} formats found")
+                    for i, fmt in enumerate(available_formats[:5]):  # Show first 5 formats
+                        self.log(f"Format {i}: {fmt.get('format_id', 'N/A')} - {fmt.get('ext', 'N/A')} - {fmt.get('height', 'N/A')}p")
+                    
+                    # Check if video is available
+                    if info.get('availability') == 'private':
+                        raise RuntimeError("This video is private and cannot be downloaded")
+                    elif info.get('availability') == 'unavailable':
+                        raise RuntimeError("This video is unavailable in your region")
                     
                 except Exception as format_error:
                     self.log(f"Warning: Could not extract format info: {format_error}")
                 
                 # Proceed with download
+                self.log("Starting download...")
                 ydl.download([url])
             
             # Find downloaded file
             files = os.listdir(temp_dir)
-            if not files:
-                raise RuntimeError("No file downloaded")
+            self.log(f"Files in temp directory: {files}")
             
-            return os.path.join(temp_dir, files[0])
+            if not files:
+                # Check if there are any hidden files or subdirectories
+                all_files = []
+                for root, dirs, filenames in os.walk(temp_dir):
+                    for filename in filenames:
+                        all_files.append(os.path.join(root, filename))
+                
+                self.log(f"All files found (including subdirectories): {all_files}")
+                
+                if not all_files:
+                    raise RuntimeError("No file downloaded. This could be due to: 1) Video restrictions, 2) Network issues, 3) yt-dlp version incompatibility")
+                
+                # Use the first file found
+                return all_files[0]
+            
+            # Return the first file found
+            downloaded_file = os.path.join(temp_dir, files[0])
+            self.log(f"Successfully downloaded: {downloaded_file}")
+            return downloaded_file
             
         except ImportError:
             raise RuntimeError("yt-dlp not installed. Install with: pip install yt-dlp")
@@ -286,6 +331,10 @@ class ChatInput(ChatComponent):
             error_msg = str(e)
             if "Requested format is not available" in error_msg:
                 raise RuntimeError(f"YouTube format error: {error_msg}. Try using a different video or check if the video is available.")
+            elif "Video unavailable" in error_msg:
+                raise RuntimeError(f"YouTube video unavailable: {error_msg}. The video may be private, deleted, or region-restricted.")
+            elif "Sign in" in error_msg:
+                raise RuntimeError(f"YouTube requires authentication: {error_msg}. This video may be age-restricted or require login.")
             else:
                 raise RuntimeError(f"Failed to download from YouTube: {error_msg}")
 
@@ -391,24 +440,108 @@ class ChatInput(ChatComponent):
     def extract_frames(self, video_path: str, num_frames: int = 3) -> tuple[list[str], str]:
         """Extract frames from video and return frame paths and temp directory."""
         tmp_dir = tempfile.mkdtemp()
-        output_pattern = os.path.join(tmp_dir, "frame_%03d.jpg")
+        self.log(f"Created temporary directory for frame extraction: {tmp_dir}")
         
-        cmd = [
-            "ffmpeg", "-i", video_path,
-            "-vf", f"fps=1/{max(1, num_frames)}",
-            "-vframes", str(num_frames),
-            output_pattern,
-            "-hide_banner", "-loglevel", "error"
-        ]
-        
+        # First, let's check if the video file is valid
         try:
-            subprocess.run(cmd, check=True)
-            frame_files = [os.path.join(tmp_dir, f) for f in sorted(os.listdir(tmp_dir)) if f.endswith(".jpg")]
-            return frame_files, tmp_dir
+            # Check video file info
+            probe_cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", video_path]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+            self.log("Video file info retrieved successfully")
         except subprocess.CalledProcessError as e:
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
-            raise RuntimeError(f"Failed to extract frames from video. FFmpeg error: {e}")
+            raise RuntimeError(f"Invalid or corrupted video file. FFprobe error: {e.stderr}")
+        
+        # Try multiple frame extraction strategies
+        strategies = [
+            # Strategy 1: Standard frame extraction
+            {
+                "name": "Standard extraction",
+                "cmd": [
+                    "ffmpeg", "-i", video_path,
+                    "-vf", f"fps=1/{max(1, num_frames)}",
+                    "-vframes", str(num_frames),
+                    os.path.join(tmp_dir, "frame_%03d.jpg"),
+                    "-hide_banner", "-loglevel", "error"
+                ]
+            },
+            # Strategy 2: Extract frames at specific timestamps
+            {
+                "name": "Timestamp-based extraction",
+                "cmd": [
+                    "ffmpeg", "-i", video_path,
+                    "-vf", "select='eq(pict_type,I)'",
+                    "-vsync", "vfr",
+                    "-vframes", str(num_frames),
+                    os.path.join(tmp_dir, "frame_%03d.jpg"),
+                    "-hide_banner", "-loglevel", "error"
+                ]
+            },
+            # Strategy 3: Extract frames at regular intervals
+            {
+                "name": "Interval-based extraction",
+                "cmd": [
+                    "ffmpeg", "-i", video_path,
+                    "-vf", "select='not(mod(n,30))'",
+                    "-vframes", str(num_frames),
+                    os.path.join(tmp_dir, "frame_%03d.jpg"),
+                    "-hide_banner", "-loglevel", "error"
+                ]
+            },
+            # Strategy 4: Simple frame extraction without filters
+            {
+                "name": "Simple extraction",
+                "cmd": [
+                    "ffmpeg", "-i", video_path,
+                    "-vframes", str(num_frames),
+                    os.path.join(tmp_dir, "frame_%03d.jpg"),
+                    "-hide_banner", "-loglevel", "error"
+                ]
+            }
+        ]
+        
+        for i, strategy in enumerate(strategies):
+            try:
+                self.log(f"Trying frame extraction strategy {i+1}: {strategy['name']}")
+                subprocess.run(strategy["cmd"], check=True, capture_output=True, text=True)
+                
+                # Check if frames were extracted
+                frame_files = [os.path.join(tmp_dir, f) for f in sorted(os.listdir(tmp_dir)) if f.endswith(".jpg")]
+                
+                if frame_files:
+                    self.log(f"Successfully extracted {len(frame_files)} frames using strategy: {strategy['name']}")
+                    return frame_files, tmp_dir
+                else:
+                    self.log(f"Strategy {strategy['name']} completed but no frames found")
+                    
+            except subprocess.CalledProcessError as e:
+                self.log(f"Strategy {strategy['name']} failed: {e.stderr}")
+                continue
+        
+        # If all strategies failed, try to get at least one frame
+        try:
+            self.log("All strategies failed, trying to extract just one frame...")
+            simple_cmd = [
+                "ffmpeg", "-i", video_path,
+                "-vframes", "1",
+                os.path.join(tmp_dir, "single_frame.jpg"),
+                "-hide_banner", "-loglevel", "error"
+            ]
+            subprocess.run(simple_cmd, check=True, capture_output=True, text=True)
+            
+            single_frame = os.path.join(tmp_dir, "single_frame.jpg")
+            if os.path.exists(single_frame):
+                self.log("Successfully extracted one frame as fallback")
+                return [single_frame], tmp_dir
+                
+        except subprocess.CalledProcessError as e:
+            self.log(f"Even single frame extraction failed: {e.stderr}")
+        
+        # Clean up and raise error
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        raise RuntimeError("Failed to extract any frames from video. The video file may be corrupted, in an unsupported format, or too short.")
 
     def query_gpt4v(self, image_paths: list[str], api_key: str) -> str:
         """Analyze video frames using GPT-4V."""
@@ -469,26 +602,103 @@ After installation, restart your application."""
             if not os.path.exists(video_file_path):
                 return f"Error: Video file not found at {video_file_path}"
             
-            # Extract frames and analyze with GPT-4V
-            frames, frames_dir = self.extract_frames(video_file_path, num_frames=3)
+            # Check file size
+            file_size = os.path.getsize(video_file_path)
+            if file_size == 0:
+                return "Error: Video file is empty"
             
-            if not frames:
-                return "Error: Could not extract frames from video"
+            self.log(f"Processing video file: {video_file_path} (size: {file_size} bytes)")
             
-            summary = self.query_gpt4v(frames, api_key)
-            
-            # Cleanup temporary files
-            cleanup_paths = [frames_dir] + frames
-            for p in cleanup_paths:
+            # Try to extract frames and analyze with GPT-4V
+            try:
+                frames, frames_dir = self.extract_frames(video_file_path, num_frames=3)
+                
+                if not frames:
+                    return "Error: Could not extract frames from video"
+                
+                self.log(f"Successfully extracted {len(frames)} frames for analysis")
+                summary = self.query_gpt4v(frames, api_key)
+                
+                # Cleanup temporary files
+                cleanup_paths = [frames_dir] + frames
+                for p in cleanup_paths:
+                    try:
+                        if os.path.isfile(p):
+                            os.remove(p)
+                        elif os.path.isdir(p):
+                            shutil.rmtree(p)
+                    except (OSError, FileNotFoundError):
+                        pass
+                
+                return summary
+                
+            except Exception as frame_error:
+                self.log(f"Frame extraction failed: {frame_error}")
+                
+                # Fallback: Try to get video metadata and provide basic analysis
                 try:
-                    if os.path.isfile(p):
-                        os.remove(p)
-                    elif os.path.isdir(p):
-                        shutil.rmtree(p)
-                except (OSError, FileNotFoundError):
-                    pass
-            
-            return summary
+                    self.log("Attempting fallback analysis using video metadata...")
+                    
+                    # Get video information using ffprobe
+                    probe_cmd = [
+                        "ffprobe", "-v", "quiet", "-print_format", "json", 
+                        "-show_format", "-show_streams", video_file_path
+                    ]
+                    
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+                    video_info = result.stdout
+                    
+                    # Extract basic video information
+                    import json
+                    try:
+                        info = json.loads(video_info)
+                        format_info = info.get('format', {})
+                        streams = info.get('streams', [])
+                        
+                        # Find video stream
+                        video_stream = None
+                        for stream in streams:
+                            if stream.get('codec_type') == 'video':
+                                video_stream = stream
+                                break
+                        
+                        # Build basic video description
+                        description_parts = []
+                        
+                        if format_info:
+                            duration = format_info.get('duration')
+                            if duration:
+                                duration_sec = float(duration)
+                                minutes = int(duration_sec // 60)
+                                seconds = int(duration_sec % 60)
+                                description_parts.append(f"Duration: {minutes}m {seconds}s")
+                            
+                            size = format_info.get('size')
+                            if size:
+                                size_mb = int(size) / (1024 * 1024)
+                                description_parts.append(f"File size: {size_mb:.1f} MB")
+                        
+                        if video_stream:
+                            width = video_stream.get('width')
+                            height = video_stream.get('height')
+                            if width and height:
+                                description_parts.append(f"Resolution: {width}x{height}")
+                            
+                            codec = video_stream.get('codec_name')
+                            if codec:
+                                description_parts.append(f"Codec: {codec}")
+                        
+                        if description_parts:
+                            basic_info = " | ".join(description_parts)
+                            return f"Video Analysis (Metadata Only):\n\n{basic_info}\n\nNote: Frame extraction failed, so detailed visual analysis is not available. The video file may be corrupted, in an unsupported format, or too short for frame extraction."
+                        else:
+                            return "Video Analysis: Unable to extract detailed information. The video file may be corrupted or in an unsupported format."
+                            
+                    except json.JSONDecodeError:
+                        return "Video Analysis: Unable to parse video metadata. The video file may be corrupted."
+                        
+                except subprocess.CalledProcessError as probe_error:
+                    return f"Video Analysis: Unable to analyze video file. Error: {probe_error.stderr}"
             
         except Exception as e:
             return f"Error processing video: {str(e)}"

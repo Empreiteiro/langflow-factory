@@ -17,6 +17,7 @@ class ModalConverterComponent(Component):
     display_name = "Modal Converter"
     description = "Convert text to audio, image, or video using AI models."
     icon = "repeat"
+    beta = True
 
     inputs = [
         HandleInput(
@@ -182,9 +183,9 @@ class ModalConverterComponent(Component):
                 )
                 frontend_node["outputs"].append(
                     Output(
-                        display_name="Playground Audio",
-                        name="playground_audio",
-                        method="generate_playground_audio",
+                        display_name="Markdown",
+                        name="markdown_output",
+                        method="generate_markdown",
                     ).to_dict()
                 )
             elif field_value == "Image":
@@ -204,9 +205,9 @@ class ModalConverterComponent(Component):
                 )
                 frontend_node["outputs"].append(
                     Output(
-                        display_name="Playground Image",
-                        name="playground_image",
-                        method="generate_playground_image",
+                        display_name="Markdown",
+                        name="markdown_output",
+                        method="generate_markdown",
                     ).to_dict()
                 )
             elif field_value == "Video":
@@ -226,9 +227,9 @@ class ModalConverterComponent(Component):
                 )
                 frontend_node["outputs"].append(
                     Output(
-                        display_name="Playground Video",
-                        name="playground_video",
-                        method="generate_playground_video",
+                        display_name="Markdown",
+                        name="markdown_output",
+                        method="generate_markdown",
                     ).to_dict()
                 )
 
@@ -419,13 +420,32 @@ class ModalConverterComponent(Component):
             self.status = f"Error: {error_msg}"
             return Message(text=f"Error: {error_msg}")
 
-    def generate_playground_audio(self) -> Message:
-        """Generate HTML audio player code for the generated audio."""
+    def generate_markdown(self) -> Message:
+        """Generate markdown output based on the selected output type."""
         try:
             text = self._extract_text_from_input()
             if not text or not text.strip():
-                return Message(text="Error: No text provided for audio generation")
+                return Message(text="Error: No text provided for markdown generation")
 
+            output_type = getattr(self, 'output_type', 'Audio') or 'Audio'
+
+            if output_type == "Audio":
+                return self._generate_audio_markdown(text)
+            elif output_type == "Image":
+                return self._generate_image_markdown(text)
+            elif output_type == "Video":
+                return self._generate_video_markdown(text)
+            else:
+                return Message(text="Error: Unknown output type")
+
+        except Exception as e:
+            error_msg = f"Error generating markdown: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")
+
+    def _generate_audio_markdown(self, text: str) -> Message:
+        """Generate HTML audio player code for the generated audio."""
+        try:
             api_key = self._get_api_key()
             voice = getattr(self, 'voice', 'alloy') or 'alloy'
             format_ = getattr(self, 'audio_format', 'mp3') or 'mp3'
@@ -466,7 +486,90 @@ class ModalConverterComponent(Component):
                 return Message(text=f"Error: {error_msg}")
 
         except Exception as e:
-            error_msg = f"Error generating playground audio: {str(e)}"
+            error_msg = f"Error generating audio markdown: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")
+
+    def _generate_image_markdown(self, text: str) -> Message:
+        """Generate markdown image code for the generated image."""
+        try:
+            # Check if only one image is requested
+            n = getattr(self, 'num_images', 1) or 1
+            if n != 1:
+                return Message(text="Markdown Image output is only available when generating a single image (Number of Images = 1)")
+
+            api_key = self._get_api_key()
+            model = getattr(self, 'image_model', 'dall-e-3') or 'dall-e-3'
+            size = getattr(self, 'image_size', '1024x1024') or '1024x1024'
+
+            client = OpenAI(api_key=api_key)
+
+            self.status = f"Generating image using {model} model..."
+            self.log(f"Making image generation request with model: {model}, size: {size}, count: {n}")
+
+            response = client.images.generate(
+                model=model,
+                prompt=text,
+                n=n,
+                size=size
+            )
+
+            # Return markdown image code for the first image
+            if response.data and len(response.data) > 0:
+                image_url = response.data[0].url
+                # Create a description from the prompt
+                description = text[:50] + "..." if len(text) > 50 else text
+                markdown_code = f"![{description}]({image_url})"
+                
+                self.status = f"Generated image markdown successfully!"
+                self.log(f"Generated image markdown: {markdown_code}")
+                
+                return Message(text=markdown_code)
+            else:
+                error_msg = "No image URL generated"
+                self.status = f"Error: {error_msg}"
+                return Message(text=f"Error: {error_msg}")
+
+        except Exception as e:
+            error_msg = f"Error generating image markdown: {str(e)}"
+            self.status = f"Error: {error_msg}"
+            return Message(text=f"Error: {error_msg}")
+
+    def _generate_video_markdown(self, text: str) -> Message:
+        """Generate HTML video player code for the generated video."""
+        try:
+            # First, generate the video using the main method
+            video_result = self.generate_video()
+            
+            # Check if video generation was successful
+            if hasattr(video_result, 'data') and isinstance(video_result.data, dict):
+                if 'error' in video_result.data:
+                    return Message(text=f"Error: {video_result.data['error']}")
+                
+                # Get the primary video URL
+                video_url = video_result.data.get('video_url')
+                if not video_url:
+                    return Message(text="Error: No video URL generated")
+                
+                # Determine aspect ratio for dimensions
+                aspect_ratio = getattr(self, 'aspect_ratio', '16:9') or '16:9'
+                if aspect_ratio == "16:9":
+                    width, height = 640, 360
+                elif aspect_ratio == "9:16":
+                    width, height = 360, 640
+                else:
+                    width, height = 640, 360  # Default to 16:9
+                
+                # Generate HTML video player code
+                html_code = f'<video width="{width}" height="{height}" controls>\n  <source src="{video_url}">\n</video>'
+                
+                self.status = f"Generated video HTML for {aspect_ratio} aspect ratio"
+                return Message(text=html_code)
+            else:
+                return Message(text="Error: Invalid video generation result")
+                
+        except Exception as e:
+            error_msg = f"Error generating video markdown: {str(e)}"
             self.status = f"Error: {error_msg}"
             return Message(text=f"Error: {error_msg}")
 
@@ -562,54 +665,7 @@ class ModalConverterComponent(Component):
             self.status = f"Error: {error_msg}"
             return Message(text=f"Error: {error_msg}")
 
-    def generate_playground_image(self) -> Message:
-        """Generate markdown image code for the generated image (only for single image)."""
-        try:
-            text = self._extract_text_from_input()
-            if not text or not text.strip():
-                return Message(text="Error: No text provided for image generation")
 
-            # Check if only one image is requested
-            n = getattr(self, 'num_images', 1) or 1
-            if n != 1:
-                return Message(text="Playground Image output is only available when generating a single image (Number of Images = 1)")
-
-            api_key = self._get_api_key()
-            model = getattr(self, 'image_model', 'dall-e-3') or 'dall-e-3'
-            size = getattr(self, 'image_size', '1024x1024') or '1024x1024'
-
-            client = OpenAI(api_key=api_key)
-
-            self.status = f"Generating image using {model} model..."
-            self.log(f"Making image generation request with model: {model}, size: {size}, count: {n}")
-
-            response = client.images.generate(
-                model=model,
-                prompt=text,
-                n=n,
-                size=size
-            )
-
-            # Return markdown image code for the first image
-            if response.data and len(response.data) > 0:
-                image_url = response.data[0].url
-                # Create a description from the prompt
-                description = text[:50] + "..." if len(text) > 50 else text
-                markdown_code = f"![{description}]({image_url})"
-                
-                self.status = f"Generated playground image markdown successfully!"
-                self.log(f"Generated playground image markdown: {markdown_code}")
-                
-                return Message(text=markdown_code)
-            else:
-                error_msg = "No image URL generated"
-                self.status = f"Error: {error_msg}"
-                return Message(text=f"Error: {error_msg}")
-
-        except Exception as e:
-            error_msg = f"Error generating playground image: {str(e)}"
-            self.status = f"Error: {error_msg}"
-            return Message(text=f"Error: {error_msg}")
 
     def generate_video(self) -> Data:
         """Generate video from text using Google Veo."""
@@ -733,40 +789,4 @@ class ModalConverterComponent(Component):
             self.status = f"Error: {error_msg}"
             return Message(text=f"Error: {error_msg}")
 
-    def generate_playground_video(self) -> Message:
-        """Generate HTML video player code for the generated video."""
-        try:
-            # First, generate the video using the main method
-            video_result = self.generate_video()
-            
-            # Check if video generation was successful
-            if hasattr(video_result, 'data') and isinstance(video_result.data, dict):
-                if 'error' in video_result.data:
-                    return Message(text=f"Error: {video_result.data['error']}")
-                
-                # Get the primary video URL
-                video_url = video_result.data.get('video_url')
-                if not video_url:
-                    return Message(text="Error: No video URL generated")
-                
-                # Determine aspect ratio for dimensions
-                aspect_ratio = getattr(self, 'aspect_ratio', '16:9') or '16:9'
-                if aspect_ratio == "16:9":
-                    width, height = 640, 360
-                elif aspect_ratio == "9:16":
-                    width, height = 360, 640
-                else:
-                    width, height = 640, 360  # Default to 16:9
-                
-                # Generate HTML video player code
-                html_code = f'<video width="{width}" height="{height}" controls>\n  <source src="{video_url}">\n</video>'
-                
-                self.status = f"Generated playground video HTML for {aspect_ratio} aspect ratio"
-                return Message(text=html_code)
-            else:
-                return Message(text="Error: Invalid video generation result")
-                
-        except Exception as e:
-            error_msg = f"Error generating playground video: {str(e)}"
-            self.status = f"Error: {error_msg}"
-            return Message(text=f"Error: {error_msg}")
+

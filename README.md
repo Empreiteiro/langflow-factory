@@ -109,6 +109,13 @@ result = component.make_request()
 - `whatsapp_evolution.py` - WhatsApp automation
 - `telegram.py` - Telegram bot integration
 
+### 🎥 **Multi-Modal Processing**
+- `multi-modal_input.py` - Audio, video, and image processing with AI analysis
+  - YouTube video download and analysis
+  - Audio transcription using OpenAI Whisper
+  - Image analysis using GPT-4V
+  - Supports direct URLs, YouTube, and Google Drive links
+
 ### 📊 **Data Processing**
 - `core_data_operations.py` - Advanced data manipulation
 - `dataFrame_operations` - Pandas DataFrame utilities
@@ -124,7 +131,43 @@ python -m pytest tests/
 
 # Run specific component tests
 python -m pytest tests/test_api_request.py
+
+# Test YouTube download functionality
+python scripts/test_youtube_download.py
 ```
+
+## 🔧 Troubleshooting
+
+### YouTube Download Issues
+
+If you encounter "Error downloading video from URL: Failed to download media from URL: Failed to download from YouTube: No file downloaded", follow these steps:
+
+1. **Install yt-dlp:**
+```bash
+pip install yt-dlp
+```
+
+2. **Install FFmpeg (required for video processing):**
+   - **Windows:** `winget install FFmpeg` or download from https://ffmpeg.org/download.html
+   - **Mac:** `brew install ffmpeg`
+   - **Linux:** `sudo apt install ffmpeg`
+
+3. **Run the installation script:**
+```bash
+python scripts/install_dependencies.py
+```
+
+4. **Test the functionality:**
+```bash
+python scripts/test_youtube_download.py
+```
+
+5. **Common issues:**
+   - **Private videos:** YouTube private videos cannot be downloaded
+   - **Age-restricted content:** May require authentication
+   - **Region restrictions:** Some videos are not available in certain regions
+   - **Network issues:** Check your internet connection
+   - **yt-dlp version:** Ensure you have the latest version: `pip install --upgrade yt-dlp`
 
 ## 📚 Documentation
 
