@@ -21,8 +21,8 @@ ACTION_CONFIG = {
     "Append or Update": {"is_list": False, "log_msg": "setting Append or Update fields"},
     "Remove Keys": {"is_list": False, "log_msg": "setting remove keys fields"},
     "Rename Keys": {"is_list": False, "log_msg": "setting rename keys fields"},
-    "JSON Path": {"is_list": False, "log_msg": "setting mapped key extractor fields"},
-    "JSON Query": {"is_list": False, "log_msg": "setting parse json fields"},
+    "Mapped JSON": {"is_list": False, "log_msg": "setting mapped key extractor fields"},
+    "jQuery": {"is_list": False, "log_msg": "setting parse json fields"},
 
 }
 OPERATORS = {
@@ -74,8 +74,8 @@ class DataOperationsComponent(Component):
         "Append or Update": ["append_update_data", "operations"],
         "Remove Keys": ["remove_keys_input", "operations"],
         "Rename Keys": ["rename_keys_input", "operations"],
-        "JSON Path": ["mapped_json_display", "selected_key", "operations"],
-        "JSON Query": ["query", "operations"],
+        "Mapped JSON": ["mapped_json_display", "selected_key", "operations"],
+        "jQuery": ["query", "operations"],
     }
 
     @staticmethod
@@ -133,8 +133,8 @@ class DataOperationsComponent(Component):
                 {"name": "Append or Update", "icon": "circle-plus"},
                 {"name": "Remove Keys", "icon": "eraser"},
                 {"name": "Rename Keys", "icon": "pencil-line"},
-                {"name": "JSON Path", "icon": "braces"},
-                {"name": "JSON Query", "icon": "braces"},
+                {"name": "Mapped JSON", "icon": "mouse-pointer"},
+                {"name": "jQuery", "icon": "terminal"},
             ],
             real_time_refresh=True,
             limit=1,
@@ -205,6 +205,7 @@ class DataOperationsComponent(Component):
             required=False, 
             refresh_button=True, 
             real_time_refresh=True, 
+            placeholder="Add a JSON example.",
             show=False
         ),
         
@@ -219,8 +220,9 @@ class DataOperationsComponent(Component):
         
         MessageTextInput(
             name="query",
-            display_name="JSON Query",
+            display_name="jQuery",
             info="JSON Query to filter the data. Used by Parse JSON operation.",
+            placeholder=".properties.hs_object_id",
             show=False,
         ),
     ]
@@ -522,8 +524,8 @@ class DataOperationsComponent(Component):
             "Append or Update": self.append_update,
             "Remove Keys": self.remove_keys,
             "Rename Keys": self.rename_keys,
-            "JSON Path": self.json_path,
-            "JSON Query": self.json_query,
+            "Mapped JSON": self.json_path,
+            "jQuery": self.json_query,
         }
         handler: Callable[[], Data] | None = action_map.get(selected_actions[0])
         if handler:
