@@ -6,11 +6,11 @@ import re
 from typing import Any
 
 
-class BackupConditionalRouterComponent(Component):
+class ConditionalRouterComponent(Component):
     display_name = "Conditional Router"
     description = "Routes an input message to a corresponding output based on text comparison or LLM-based categorization."
     icon = "equal"
-    name = "BackupConditionalRouter"
+    name = "SmartConditionalRouter"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

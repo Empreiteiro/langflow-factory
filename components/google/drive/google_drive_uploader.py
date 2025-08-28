@@ -40,11 +40,12 @@ class GoogleDriveUploader(Component):
             info="Select the type of the file.",
             required=True,
         ),
-        StrInput(
+        MessageInput(
             name="folder_id",
             display_name="Destination Folder ID",
             info="The Google Drive folder ID where the file will be uploaded. The folder must be shared with the service account email.",
             required=True,
+            tool_mode=True,
         ),
         FileInput(
             name="service_account_json",
@@ -85,10 +86,32 @@ class GoogleDriveUploader(Component):
         
         return sanitized
 
+    def _extract_folder_id(self, folder_id):
+        """Extract folder ID from MessageInput object"""
+        # Handle Message object from MessageInput
+        if hasattr(folder_id, 'content'):
+            folder_id = folder_id.content
+        elif hasattr(folder_id, 'text'):
+            folder_id = folder_id.text
+        elif hasattr(folder_id, 'message'):
+            folder_id = folder_id.message
+        else:
+            folder_id = str(folder_id)
+        
+        # Remove any whitespace and validate
+        folder_id = folder_id.strip()
+        if not folder_id:
+            raise ValueError("Folder ID cannot be empty")
+        
+        return folder_id
+
     def upload_file(self) -> Data:
         try:
             # Validate and sanitize filename
             sanitized_filename = self._sanitize_filename(self.file_name)
+            
+            # Extract folder ID from MessageInput
+            extracted_folder_id = self._extract_folder_id(self.folder_id)
             
             with open(self.service_account_json, "r", encoding="utf-8") as f:
                 credentials_dict = json.load(f)
@@ -109,7 +132,7 @@ class GoogleDriveUploader(Component):
                 file_metadata = {
                     "name": sanitized_filename,
                     "mimeType": "application/vnd.google-apps.presentation",
-                    "parents": [self.folder_id],
+                    "parents": [extracted_folder_id],
                 }
 
                 created_file = drive_service.files().create(body=file_metadata, fields="id").execute()
@@ -165,7 +188,7 @@ class GoogleDriveUploader(Component):
                 file_metadata = {
                     "name": sanitized_filename,
                     "mimeType": "application/vnd.google-apps.document",
-                    "parents": [self.folder_id],
+                    "parents": [extracted_folder_id],
                 }
 
                 created_file = drive_service.files().create(body=file_metadata, fields="id").execute()
@@ -227,7 +250,7 @@ class GoogleDriveUploader(Component):
             with open(file_path, "wb") as file:
                 file.write(file_data)
 
-            file_metadata = {"name": os.path.basename(file_path), "parents": [self.folder_id]}
+            file_metadata = {"name": os.path.basename(file_path), "parents": [extracted_folder_id]}
             media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
 
             uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()

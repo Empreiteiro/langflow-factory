@@ -1,0 +1,45 @@
+Modelos Líderes e Seus Fundadores
+1. GPT (OpenAI)
+
+Fundadores de OpenAI: Sam Altman, Elon Musk, Ilya Sutskever, Greg Brockman, Trevor Blackwell, Vicki Cheung, Andrej Karpathy, Durk Kingma, John Schulman, Pamela Vagata e Wojciech Zaremba. 
+Wikipedia
++1
+
+2. Claude (Anthropic)
+
+Fundadores de Anthropic: Daniela Amodei e Dario Amodei (entre outros ex-OpenAI). 
+research.contrary.com
++9
+Wikipedia
++9
+Built In
++9
+
+3. Gemini (Google DeepMind)
+
+Fundadores originários: Desenvolvido por Google AI e DeepMind, com liderança técnica de Sundar Pichai e Demis Hassabis; contribuição significativa de Sergey Brin como “core contributor”. 
+Wikipedia
+
+4. Llama (Meta AI)
+
+Origem: Criado pela equipe de pesquisa da Meta AI, sem fundadores individuais destacados publicamente. 
+Wikipedia
+
+5. LaMDA (Google Brain)
+
+Desenvolvido por: Equipe do Google Brain (liderança interna), sem fundadores nomeados externos específicos. 
+Wikipedia
+
+6. Cohere
+
+Fundadores: Aidan Gomez, Ivan Zhang e Nick Frosst, todos ex-Google Brain. 
+Radical Ventures
++6
+Wikipedia
++6
+Cohere
++6
+
+7. EleutherAI (GPT-Neo / GPT-J)
+
+Fundadores do projeto: Connor Leahy, Len Gao e Sid Black. 

@@ -56,7 +56,7 @@ class MultiModalInputComponent(Component):
     description = "Receives audio, video, or image input and transforms it into text using AI analysis."
     icon = "repeat"
     name = "Multi-modal Input"
-    minimized = True
+    beta=True
 
     inputs = [
         TabInput(
