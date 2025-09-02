@@ -50,22 +50,6 @@ class APIRequestComponent(Component):
     name = "APIRequest"
 
     inputs = [
-        TabInput(
-            name="body_input_mode",
-            display_name="Body Input Mode",
-            options=["Fixed", "Dynamic"],
-            value="Fixed",
-            info="Select the type of body input: Fixed (manual table) or Dynamic (data from connections)",
-            real_time_refresh=True,
-        ),
-        TabInput(
-            name="header_input_mode",
-            display_name="Header Input Mode",
-            options=["Fixed", "Dynamic"],
-            value="Fixed",
-            info="Select the type of header input: Fixed (manual table) or Dynamic (data from connections)",
-            real_time_refresh=True,
-        ),
         MessageTextInput(
             name="url_input",
             display_name="URL",
@@ -110,7 +94,7 @@ class APIRequestComponent(Component):
         TableInput(
             name="body",
             display_name="Body",
-            info="Manual body configuration as key-value pairs (for POST, PATCH, PUT).",
+            info="The body to send with the request as a dictionary (for POST, PATCH, PUT).",
             table_schema=[
                 {
                     "name": "key",
@@ -125,19 +109,14 @@ class APIRequestComponent(Component):
                 },
             ],
             value=[],
+            input_types=["Data"],
+            advanced=True,
             real_time_refresh=True,
-            show=True,  # Will be controlled dynamically
-        ),
-        DataInput(
-            name="body_string",
-            display_name="Body Data",
-            info="Dynamic body data from connected components.",
-            show=False,  # Will be controlled dynamically
         ),
         TableInput(
             name="headers",
             display_name="Headers",
-            info="Manual headers configuration as key-value pairs",
+            info="The headers to send with the request",
             table_schema=[
                 {
                     "name": "key",
@@ -153,14 +132,9 @@ class APIRequestComponent(Component):
                 },
             ],
             value=[{"key": "User-Agent", "value": get_settings_service().settings.user_agent}],
+            advanced=True,
+            input_types=["Data"],
             real_time_refresh=True,
-            show=True,  # Will be controlled dynamically
-        ),
-        DataInput(
-            name="headers_string",
-            display_name="Headers Data",
-            info="Dynamic headers data from connected components.",
-            show=False,  # Will be controlled dynamically
         ),
         IntInput(
             name="timeout",
@@ -215,6 +189,8 @@ class APIRequestComponent(Component):
         """Process the body input into a valid dictionary."""
         if body is None:
             return {}
+        if hasattr(body, "data"):
+            body = body.data
         if isinstance(body, dict):
             return self._process_dict_body(body)
         if isinstance(body, str):
@@ -239,6 +215,13 @@ class APIRequestComponent(Component):
         processed_dict = {}
         try:
             for item in body:
+                # Unwrap Data objects
+                if hasattr(item, "data"):
+                    unwrapped_data = item.data
+                    # If the unwrapped data is a dict but not key-value format, use it directly
+                    if isinstance(unwrapped_data, dict) and not self._is_valid_key_value_item(unwrapped_data):
+                        return unwrapped_data
+                    item = unwrapped_data
                 if not self._is_valid_key_value_item(item):
                     continue
                 key = item["key"]
@@ -252,141 +235,6 @@ class APIRequestComponent(Component):
     def _is_valid_key_value_item(self, item: Any) -> bool:
         """Check if an item is a valid key-value dictionary."""
         return isinstance(item, dict) and "key" in item and "value" in item
-
-    def _extract_and_serialize_data(self, data_input: Any, field_name: str) -> dict:
-        """Extract data from input and ensure it's JSON serializable."""
-        if data_input is None:
-            self.log(f"No {field_name} data provided")
-            return {}
-
-        # Extract the actual data
-        extracted_data = None
-        
-        # Handle Data objects
-        if hasattr(data_input, 'data') and data_input.data is not None:
-            extracted_data = data_input.data
-            self.log(f"Extracted {field_name} from Data object: {type(extracted_data)}")
-        # Handle Message objects
-        elif hasattr(data_input, 'text') and data_input.text is not None:
-            self.log(f"Extracted {field_name} from Message object")
-            try:
-                extracted_data = json.loads(data_input.text)
-            except (json.JSONDecodeError, ValueError):
-                extracted_data = {"data": data_input.text}
-        # Handle direct input
-        elif data_input:
-            extracted_data = data_input
-            self.log(f"Using {field_name} as direct input: {type(extracted_data)}")
-        else:
-            self.log(f"No valid {field_name} data found")
-            return {}
-
-        # Convert to JSON-serializable format
-        return self._make_json_serializable(extracted_data, field_name)
-
-    def _make_json_serializable(self, data: Any, field_name: str) -> dict:
-        """Convert any data structure to JSON-serializable format."""
-        try:
-            # Test if it's already JSON serializable
-            json.dumps(data)
-            if isinstance(data, dict):
-                return data
-            elif isinstance(data, list):
-                # Convert list to dictionary if it's key-value pairs
-                if all(self._is_valid_key_value_item(item) for item in data):
-                    return {item["key"]: item["value"] for item in data}
-                else:
-                    return {"data": data}
-            else:
-                return {"data": data}
-        except (TypeError, ValueError, AttributeError) as e:
-            self.log(f"Converting non-serializable {field_name} data: {e}")
-            try:
-                return self._convert_complex_object(data)
-            except Exception as nested_e:
-                self.log(f"Failed to convert complex object: {nested_e}")
-                # Ultimate fallback
-                return {"data": str(data) if data is not None else ""}
-
-    def _convert_complex_object(self, obj: Any) -> dict:
-        """Convert complex objects to dictionary format."""
-        if obj is None:
-            return {}
-        
-        # Handle common Langflow/Pydantic objects
-        if hasattr(obj, 'dict') and callable(obj.dict):
-            try:
-                result = obj.dict()
-                # Ensure the result is JSON serializable
-                json.dumps(result)
-                return result
-            except Exception as e:
-                self.log(f"Failed to use .dict() method: {e}")
-        
-        # Handle model_dump for Pydantic v2
-        if hasattr(obj, 'model_dump') and callable(obj.model_dump):
-            try:
-                result = obj.model_dump()
-                json.dumps(result)
-                return result
-            except Exception as e:
-                self.log(f"Failed to use .model_dump() method: {e}")
-        
-        # Handle objects with __dict__
-        if hasattr(obj, '__dict__'):
-            try:
-                result = {}
-                for key, value in obj.__dict__.items():
-                    if not key.startswith('_'):  # Skip private attributes
-                        str_key = str(key)
-                        try:
-                            # Test if value is JSON serializable
-                            json.dumps(value)
-                            result[str_key] = value
-                        except (TypeError, ValueError, AttributeError):
-                            # Convert nested complex objects to string
-                            try:
-                                result[str_key] = str(value)
-                            except Exception:
-                                result[str_key] = "<unprintable>"
-                return result
-            except Exception as e:
-                self.log(f"Failed to process __dict__: {e}")
-        
-        # Try to extract common attributes for known object types
-        try:
-            if hasattr(obj, 'name') and hasattr(obj, 'value'):
-                return {"name": str(obj.name), "value": str(obj.value)}
-            elif hasattr(obj, 'key') and hasattr(obj, 'value'):
-                return {"key": str(obj.key), "value": str(obj.value)}
-        except Exception:
-            pass
-        
-        # Ultimate fallback: convert to string
-        try:
-            return {"data": str(obj)}
-        except Exception:
-            return {"data": "<object cannot be converted>"}
-
-    def _flatten_headers(self, headers: dict) -> dict:
-        """Ensure headers are flat string key-value pairs."""
-        if not isinstance(headers, dict):
-            return {}
-        
-        flattened = {}
-        for key, value in headers.items():
-            # Convert key to string
-            str_key = str(key)
-            
-            # Convert value to string (headers must be strings)
-            if isinstance(value, (dict, list)):
-                str_value = json.dumps(value)
-            else:
-                str_value = str(value)
-            
-            flattened[str_key] = str_value
-        
-        return flattened
 
     def parse_curl(self, curl: str, build_config: dotdict) -> dotdict:
         """Parse a cURL command and update build configuration."""
@@ -452,27 +300,13 @@ class APIRequestComponent(Component):
         follow_redirects: bool = True,
         save_to_file: bool = False,
         include_httpx_metadata: bool = False,
-        body_input_mode: str = "Fixed",
     ) -> Data:
         method = method.upper()
         if method not in {"GET", "POST", "PATCH", "PUT", "DELETE"}:
             msg = f"Unsupported method: {method}"
             raise ValueError(msg)
 
-        # Process and ensure body is JSON serializable
-        if body_input_mode == "Fixed":
-            processed_body = self._process_body(body)
-        else:
-            # Body is already processed and serializable from Dynamic mode
-            processed_body = body if isinstance(body, dict) else {}
-        
-        # Final safety check for JSON serialization
-        try:
-            json.dumps(processed_body)
-        except (TypeError, ValueError) as e:
-            self.log(f"Body not JSON serializable, converting: {e}")
-            processed_body = self._make_json_serializable(processed_body, "final_body")
-        
+        processed_body = self._process_body(body)
         redirection_history = []
 
         try:
@@ -569,27 +403,8 @@ class APIRequestComponent(Component):
         """Convert HTTP headers to a dictionary with lowercased keys."""
         return {k.lower(): v for k, v in headers.items()}
 
-    def _process_headers(self, headers: Any, header_input_mode: str = "Table") -> dict:
-        """Process the headers input into a valid dictionary, supporting both Table and String modes."""
-        if header_input_mode == "String":
-            # headers is expected to be a string (JSON or key:value lines)
-            if not headers:
-                return {}
-            try:
-                # Try to parse as JSON
-                parsed = json.loads(headers)
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                # Try to parse as key:value lines
-                result = {}
-                for line in str(headers).splitlines():
-                    if ":" in line:
-                        key, value = line.split(":", 1)
-                        result[key.strip()] = value.strip()
-                return result
-            return {}
-        # Table mode (default)
+    def _process_headers(self, headers: Any) -> dict:
+        """Process the headers input into a valid dictionary."""
         if headers is None:
             return {}
         if isinstance(headers, dict):
@@ -602,32 +417,25 @@ class APIRequestComponent(Component):
         """Make HTTP request with optimized parameter handling."""
         method = self.method
         url = self.url_input.strip() if isinstance(self.url_input, str) else ""
+        headers = self.headers or {}
+        body = self.body or {}
         timeout = self.timeout
         follow_redirects = self.follow_redirects
         save_to_file = self.save_to_file
         include_httpx_metadata = self.include_httpx_metadata
 
-        # Body input mode
-        body_input_mode = getattr(self, "body_input_mode", "Fixed")
-        if body_input_mode == "Fixed":
-            body = self.body or {}
-            body = self._process_body(body)
-        else:  # Dynamic mode
-            body_data = getattr(self, "body_string", None)
-            # Extract and process data from DataInput
-            body = self._extract_and_serialize_data(body_data, "body")
+        # if self.mode == "cURL" and self.curl_input:
+        #     self._build_config = self.parse_curl(self.curl_input, dotdict())
+        #     # After parsing curl, get the normalized URL
+        #     url = self._build_config["url_input"]["value"]
 
-        # Header input mode
-        header_input_mode = getattr(self, "header_input_mode", "Fixed")
-        if header_input_mode == "Fixed":
-            headers = self.headers or {}
-            headers = self._process_headers(headers, header_input_mode="Table")
-        else:  # Dynamic mode
-            headers_data = getattr(self, "headers_string", None)
-            # Extract and process data from DataInput
-            headers = self._extract_and_serialize_data(headers_data, "headers")
-            # Ensure headers is a flat dictionary (headers must be strings)
-            headers = self._flatten_headers(headers)
+        # Normalize URL before validation
+        url = self._normalize_url(url)
+
+        # Validate URL
+        if not validators.url(url):
+            msg = f"Invalid URL provided: {url}"
+            raise ValueError(msg)
 
         # Process query parameters
         if isinstance(self.query_params, str):
@@ -635,6 +443,9 @@ class APIRequestComponent(Component):
         else:
             query_params = self.query_params.data if self.query_params else {}
 
+        # Process headers and body
+        headers = self._process_headers(headers)
+        body = self._process_body(body)
         url = self.add_query_params(url, query_params)
 
         async with httpx.AsyncClient() as client:
@@ -648,59 +459,25 @@ class APIRequestComponent(Component):
                 follow_redirects=follow_redirects,
                 save_to_file=save_to_file,
                 include_httpx_metadata=include_httpx_metadata,
-                body_input_mode=body_input_mode,
             )
         self.status = result
         return result
 
     def update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None) -> dotdict:
-        """Update the build config based on the selected mode, body input mode, or header input mode."""
-        # Dynamic control of body input
-        if field_name == "body_input_mode":
-            if field_value == "Fixed":
-                build_config["body"]["show"] = True
-                build_config["body_string"]["show"] = False
-            elif field_value == "Dynamic":
-                build_config["body"]["show"] = False
-                build_config["body_string"]["show"] = True
-            return build_config
-        # Dynamic control of header input
-        if field_name == "header_input_mode":
-            if field_value == "Fixed":
-                build_config["headers"]["show"] = True
-                build_config["headers_string"]["show"] = False
-            elif field_value == "Dynamic":
-                build_config["headers"]["show"] = False
-                build_config["headers_string"]["show"] = True
-            return build_config
-        # Dynamic control for body input mode if body is changed
-        if field_name == "body":
-            if field_value == "Fixed":
-                build_config["body_input_mode"]["value"] = "Fixed"
-                build_config["body_string"]["show"] = False
-            elif field_value == "Dynamic":
-                build_config["body_input_mode"]["value"] = "Dynamic"
-                build_config["body_string"]["show"] = True
-            return build_config
-        # Dynamic control for header input mode if headers is changed
-        if field_name == "headers":
-            if field_value == "Fixed":
-                build_config["header_input_mode"]["value"] = "Fixed"
-                build_config["headers_string"]["show"] = False
-            elif field_value == "Dynamic":
-                build_config["header_input_mode"]["value"] = "Dynamic"
-                build_config["headers_string"]["show"] = True
-            return build_config
+        """Update the build config based on the selected mode."""
         if field_name != "mode":
             if field_name == "curl_input" and self.mode == "cURL" and self.curl_input:
                 return self.parse_curl(self.curl_input, build_config)
             return build_config
+
+        # print(f"Current mode: {field_value}")
         if field_value == "cURL":
             set_field_display(build_config, "curl_input", value=True)
             if build_config["curl_input"]["value"]:
                 build_config = self.parse_curl(build_config["curl_input"]["value"], build_config)
         else:
             set_field_display(build_config, "curl_input", value=False)
+
         return set_current_fields(
             build_config=build_config,
             action_fields=MODE_FIELDS,
