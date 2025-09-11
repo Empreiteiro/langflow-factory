@@ -1,4 +1,4 @@
-# Langflow Factory - Use Cases Templates
+### Langflow Factory - Use Cases Templates
 
 This document provides a comprehensive overview of all available use case templates organized by industry categories.
 

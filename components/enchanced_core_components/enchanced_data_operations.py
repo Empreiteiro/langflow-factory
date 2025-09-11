@@ -21,8 +21,8 @@ ACTION_CONFIG = {
     "Append or Update": {"is_list": False, "log_msg": "setting Append or Update fields"},
     "Remove Keys": {"is_list": False, "log_msg": "setting remove keys fields"},
     "Rename Keys": {"is_list": False, "log_msg": "setting rename keys fields"},
-    "Mapped JSON": {"is_list": False, "log_msg": "setting mapped key extractor fields"},
-    "jQuery": {"is_list": False, "log_msg": "setting parse json fields"},
+    "Path Selection": {"is_list": False, "log_msg": "setting mapped key extractor fields"},
+    "JQ Expression": {"is_list": False, "log_msg": "setting parse json fields"},
 
 }
 OPERATORS = {
@@ -74,8 +74,8 @@ class DataOperationsComponent(Component):
         "Append or Update": ["append_update_data", "operations"],
         "Remove Keys": ["remove_keys_input", "operations"],
         "Rename Keys": ["rename_keys_input", "operations"],
-        "Mapped JSON": ["mapped_json_display", "selected_key", "operations"],
-        "jQuery": ["query", "operations"],
+        "Path Selection": ["mapped_json_display", "selected_key", "operations"],
+        "JQ Expression": ["query", "operations"],
     }
 
     @staticmethod
@@ -133,8 +133,8 @@ class DataOperationsComponent(Component):
                 {"name": "Append or Update", "icon": "circle-plus"},
                 {"name": "Remove Keys", "icon": "eraser"},
                 {"name": "Rename Keys", "icon": "pencil-line"},
-                {"name": "Mapped JSON", "icon": "mouse-pointer"},
-                {"name": "jQuery", "icon": "terminal"},
+                {"name": "Path Selection", "icon": "mouse-pointer"},
+                {"name": "JQ Expression", "icon": "terminal"},
             ],
             real_time_refresh=True,
             limit=1,
@@ -200,7 +200,7 @@ class DataOperationsComponent(Component):
         
         MultilineInput(
             name="mapped_json_display", 
-            display_name="Mapped JSON", 
+            display_name="JSON to Map", 
             info="Paste or preview your JSON here to explore its structure and select a path for extraction.",
             required=False, 
             refresh_button=True, 
@@ -211,7 +211,7 @@ class DataOperationsComponent(Component):
         
         DropdownInput(
             name="selected_key", 
-            display_name="Select Key", 
+            display_name="Select Path", 
             options=[], 
             required=False, 
             dynamic=True, 
@@ -220,9 +220,9 @@ class DataOperationsComponent(Component):
         
         MessageTextInput(
             name="query",
-            display_name="jQuery",
+            display_name="JQ Expression",
             info="JSON Query to filter the data. Used by Parse JSON operation.",
-            placeholder=".properties.hs_object_id",
+            placeholder="e.g., .properties.id",
             show=False,
         ),
     ]
@@ -524,8 +524,8 @@ class DataOperationsComponent(Component):
             "Append or Update": self.append_update,
             "Remove Keys": self.remove_keys,
             "Rename Keys": self.rename_keys,
-            "Mapped JSON": self.json_path,
-            "jQuery": self.json_query,
+            "Path Selection": self.json_path,
+            "JQ Expression": self.json_query,
         }
         handler: Callable[[], Data] | None = action_map.get(selected_actions[0])
         if handler:
