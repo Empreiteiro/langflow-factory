@@ -6,6 +6,7 @@ from langflow.io import (
     BoolInput,
     DropdownInput,
     HandleInput,
+    MessageTextInput,
     Output,
     SecretStrInput,
     StrInput,
@@ -16,8 +17,9 @@ from langflow.schema import Data
 class S3BucketUploaderComponent(Component):
     """S3BucketUploaderComponent is a component responsible for uploading files to an S3 bucket.
 
-    It provides two strategies for file upload: "By Data" and "By File Name". The component
-    requires AWS credentials and bucket details as inputs and processes files accordingly.
+    This component processes various types of content (text, messages, dataframes) and uploads them
+    to a specified S3 bucket. It creates temporary files when needed and handles binary content
+    including PDF conversion.
 
     Attributes:
         display_name (str): The display name of the component.
@@ -28,24 +30,14 @@ class S3BucketUploaderComponent(Component):
         outputs (list): A list of output configurations provided by the component.
 
     Methods:
-        process_files() -> None:
-            Processes files based on the selected strategy. Calls the appropriate method
-            based on the strategy attribute.
-        process_files_by_data() -> None:
-            Processes and uploads files to an S3 bucket based on the data inputs. Iterates
-            over the data inputs, logs the file path and text content, and uploads each file
-            to the specified S3 bucket if both file path and text content are available.
-        process_files_by_name() -> None:
-            Processes and uploads files to an S3 bucket based on their names. Iterates through
-            the list of data inputs, retrieves the file path from each data item, and uploads
-            the file to the specified S3 bucket if the file path is available. Logs the file
-            path being uploaded.
+        upload_files() -> Data:
+            Main method that processes content inputs and uploads them to S3.
+        process_files_by_name() -> Data:
+            Internal method that handles the actual file upload process.
         _s3_client() -> Any:
-            Creates and returns an S3 client using the provided AWS access key ID and secret
-            access key.
+            Creates and returns an S3 client using the provided AWS credentials.
 
-        Please note that this component requires the boto3 library to be installed. It is designed
-        to work with File and Director components as inputs
+    Note: This component requires the boto3 library to be installed.
     """
 
     display_name = "S3 Bucket Uploader"
@@ -60,6 +52,7 @@ class S3BucketUploaderComponent(Component):
             required=True,
             password=True,
             info="AWS Access key ID.",
+            advanced=True,
         ),
         SecretStrInput(
             name="aws_secret_access_key",
@@ -67,27 +60,18 @@ class S3BucketUploaderComponent(Component):
             required=True,
             password=True,
             info="AWS Secret Key.",
+            advanced=True,
         ),
         StrInput(
             name="bucket_name",
             display_name="Bucket Name",
+            required=True,
             info="Enter the name of the bucket.",
-            advanced=False,
-        ),
-        DropdownInput(
-            name="strategy",
-            display_name="Strategy for file upload",
-            options=["Store Data", "Store Original File"],
-            value="Store Data",
-            info=(
-                "Choose the strategy to upload the file. Store Data uploads content directly. "
-                "Store Original File uploads as a file (creates temporary file if needed). "
-                "Both strategies now work with or without file_path."
-            ),
+            advanced=True,
         ),
         HandleInput(
             name="content_input",
-            display_name="Content Input",
+            display_name="File Content",
             info="Content to upload to S3. Accepts text, messages, or dataframes.",
             input_types=["Text", "Message", "DataFrame", "Data"],
             is_list=True,
@@ -105,50 +89,39 @@ class S3BucketUploaderComponent(Component):
             info="Prefix for all files.",
             advanced=True,
         ),
-        StrInput(
-            name="default_filename",
-            display_name="Default Filename",
-            info="Default filename to use when file_path is not provided (e.g., 'data.txt'). If empty, will generate based on timestamp.",
-            advanced=True,
+        MessageTextInput(
+            name="filename",
+            display_name="File Name",
+            info="Name for the uploaded file (without extension). Variables: {timestamp} (YYYYMMDD_HHMMSS), {date} (YYYYMMDD), {time} (HHMMSS), {index} (item number), {format} (file extension). Example: 'report_{date}_{index}' → 'report_20241212_1.txt'. Leave empty for auto-generated names.",
         ),
+        MessageTextInput(
+            name="file_path",
+            display_name="File Path",
+            info="Custom path/directory for the file within the S3 bucket. Variables: {timestamp}, {date}, {time}, {index}, {format}. Example: 'reports/{date}/data_{index}' → 'reports/20241212/data_1.txt'. Leave empty to use default 'langflow' directory.",
+            advanced=True,
+        ,
         DropdownInput(
             name="file_format",
             display_name="File Format",
             options=[
                 "txt", "json", "csv", "xml", "html", "md", "yaml", "log", 
-                "tsv", "jsonl", "parquet", "xlsx", "pdf", "zip"
+                "tsv", "jsonl", "parquet", "xlsx", "zip"
             ],
             value="txt",
             info="File format for the uploaded content. Affects file extension and content processing.",
         ),
-        BoolInput(
-            name="strip_path",
-            display_name="Strip Path",
-            info="Removes path from file path.",
-            required=True,
-            advanced=True,
-        ),
-        BoolInput(
-            name="debug_mode",
-            display_name="Debug Mode",
-            info="Enable detailed logging for troubleshooting data extraction.",
-            value=False,
-            advanced=True,
-        ),
     ]
 
     outputs = [
-        Output(display_name="Upload Results", name="data", method="process_files"),
+        Output(display_name="Upload Results", name="data", method="upload_files"),
     ]
 
-    def process_files(self) -> Data:
-        """Process files based on the selected strategy.
+    def upload_files(self) -> Data:
+        """Upload files to S3 bucket.
 
-        This method uses a strategy pattern to process files. The strategy is determined
-        by the `self.strategy` attribute, which can be either "Store Data" or "Store Original File".
-        Depending on the strategy, the corresponding method (`process_files_by_data` or
-        `process_files_by_name`) is called. If an invalid strategy is provided, an error
-        is returned.
+        This method processes content inputs and uploads them to the specified S3 bucket.
+        It creates temporary files when needed and handles various content types including
+        text, messages, and dataframes.
 
         Returns:
             Data: Results of the upload operation including success/error information
@@ -165,185 +138,13 @@ class S3BucketUploaderComponent(Component):
                 self.log(error_msg)
                 return Data(data={"error": error_msg, "success": False})
             
-            # Debug logging if enabled
-            if getattr(self, 'debug_mode', False):
-                self.log(f"DEBUG: Processing {len(self.content_input)} content inputs")
-                self.log(f"DEBUG: Strategy: {self.strategy}")
-                self.log(f"DEBUG: Bucket: {self.bucket_name}")
-                self.log(f"DEBUG: File format: {getattr(self, 'file_format', 'txt')}")
-                for i, item in enumerate(self.content_input):
-                    self.log(f"DEBUG: Item {i+1} type: {type(item)}")
-                    if hasattr(item, 'data'):
-                        self.log(f"DEBUG: Item {i+1} data type: {type(item.data)}")
-                        if isinstance(item.data, dict):
-                            self.log(f"DEBUG: Item {i+1} data keys: {list(item.data.keys())}")
-
-            strategy_methods = {
-                "Store Data": self.process_files_by_data,
-                "Store Original File": self.process_files_by_name,
-            }
-            
-            method = strategy_methods.get(self.strategy)
-            if not method:
-                error_msg = f"Invalid strategy: {self.strategy}"
-                self.log(error_msg)
-                return Data(data={"error": error_msg, "success": False})
-            
-            return method()
+            return self.process_files_by_name()
             
         except Exception as e:
-            error_msg = f"Unexpected error in process_files: {str(e)}"
+            error_msg = f"Unexpected error in upload_files: {str(e)}"
             self.log(error_msg)
             return Data(data={"error": error_msg, "success": False})
 
-    def process_files_by_data(self) -> Data:
-        """Processes and uploads files to an S3 bucket based on the data inputs.
-
-        This method iterates over the data inputs, logs the file path and text content,
-        and uploads each file to the specified S3 bucket if both file path and text content
-        are available.
-
-        Returns:
-            Data: Results of the upload operation including success/error information
-        """
-        uploaded_files = []
-        failed_files = []
-        
-        try:
-            s3_client = self._s3_client()
-            
-            for i, content_item in enumerate(self.content_input):
-                try:
-                    # Extract content using robust method
-                    content_info = self._extract_content_from_input(content_item, i+1)
-                    file_path = content_info['file_path']
-                    text_content = content_info['text']
-                    
-                    # Debug logging if enabled
-                    if getattr(self, 'debug_mode', False):
-                        self.log(f"Item {i+1} DEBUG: content_item type: {type(content_item)}")
-                        if hasattr(content_item, 'data'):
-                            self.log(f"Item {i+1} DEBUG: content_item.data type: {type(content_item.data)}")
-                            self.log(f"Item {i+1} DEBUG: content_item.data keys: {list(content_item.data.keys()) if isinstance(content_item.data, dict) else 'not a dict'}")
-                        self.log(f"Item {i+1} DEBUG: content_info: {content_info}")
-                    
-                    self.log(f"Item {i+1}: Content extracted from {content_info['source']}")
-
-                    # Generate default filename if file_path is missing
-                    if not file_path:
-                        file_format = getattr(self, 'file_format', 'txt')
-                        if hasattr(self, 'default_filename') and self.default_filename:
-                            # Ensure the default filename has the correct extension
-                            base_name = Path(self.default_filename).stem
-                            file_path = f"{base_name}.{file_format}"
-                        else:
-                            # Generate timestamp-based filename
-                            from datetime import datetime
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            file_path = f"data_{timestamp}_{i+1}.{file_format}"
-                        
-                        self.log(f"Item {i+1}: No file_path provided, using default: {file_path}")
-                        
-                    if not text_content:
-                        error_msg = f"Item {i+1}: No text content found (source: {content_info['source']}) for {file_path}"
-                        self.log(error_msg)
-                        
-                        # In debug mode, show what we actually found
-                        if getattr(self, 'debug_mode', False):
-                            try:
-                                import json
-                                debug_data = json.dumps(content_item.data if hasattr(content_item, 'data') else str(content_item), indent=2, default=str)[:500]
-                                self.log(f"Item {i+1} DEBUG: Raw data (first 500 chars): {debug_data}")
-                            except Exception as e:
-                                self.log(f"Item {i+1} DEBUG: Could not serialize data: {str(e)}")
-                        
-                        failed_files.append({"item": i+1, "file_path": file_path, "error": error_msg, "source": content_info['source']})
-                        continue
-
-                    normalized_path = self._normalize_path(file_path)
-                    
-                    # Handle binary vs text content
-                    if content_info.get('is_binary', False):
-                        # For binary content, don't process - upload as-is
-                        if isinstance(text_content, str):
-                            # If binary content came as string (base64, etc.), try to decode
-                            try:
-                                import base64
-                                binary_content = base64.b64decode(text_content)
-                                self.log(f"Item {i+1}: Decoded base64 binary content")
-                            except Exception:
-                                # If not base64, treat as binary string
-                                binary_content = text_content.encode('latin-1')
-                                self.log(f"Item {i+1}: Using latin-1 encoding for binary content")
-                        else:
-                            binary_content = text_content
-                        
-                        # Upload binary content directly
-                        s3_client.put_object(
-                            Bucket=self.bucket_name, 
-                            Key=normalized_path, 
-                            Body=binary_content,
-                            ContentType=self._get_content_type_for_format()
-                        )
-                        processed_content = binary_content
-                    else:
-                        # Process text content based on format
-                        processed_content = self._process_content_by_format(text_content, content_info.get('content_type', 'text'))
-                        
-                        # Upload text content
-                        s3_client.put_object(
-                            Bucket=self.bucket_name, 
-                            Key=normalized_path, 
-                            Body=processed_content.encode('utf-8') if isinstance(processed_content, str) else processed_content,
-                            ContentType=self._get_content_type_for_format()
-                        )
-                    
-                    success_msg = f"Successfully uploaded data for {file_path} to s3://{self.bucket_name}/{normalized_path}"
-                    self.log(success_msg)
-                    uploaded_files.append({
-                        "file_path": file_path,
-                        "s3_key": normalized_path,
-                        "bucket": self.bucket_name,
-                        "size_bytes": len(processed_content.encode('utf-8')) if isinstance(processed_content, str) else len(processed_content),
-                        "file_format": getattr(self, 'file_format', 'txt'),
-                        "content_type": self._get_content_type_for_format()
-                    })
-                    
-                except Exception as e:
-                    error_msg = f"Error uploading item {i+1} ({file_path if 'file_path' in locals() else 'unknown'}): {str(e)}"
-                    self.log(error_msg)
-                    failed_files.append({
-                        "item": i+1, 
-                        "file_path": file_path if 'file_path' in locals() else None,
-                        "error": str(e)
-                    })
-            
-            # Prepare result
-            result = {
-                "success": len(failed_files) == 0,
-                "total_files": len(self.content_input),
-                "uploaded_files": len(uploaded_files),
-                "failed_files": len(failed_files),
-                "uploads": uploaded_files
-            }
-            
-            if failed_files:
-                result["errors"] = failed_files
-                
-            summary_msg = f"Upload completed: {len(uploaded_files)} successful, {len(failed_files)} failed"
-            self.log(summary_msg)
-            
-            return Data(data=result)
-            
-        except Exception as e:
-            error_msg = f"Error in process_files_by_data: {str(e)}"
-            self.log(error_msg)
-            return Data(data={
-                "error": error_msg,
-                "success": False,
-                "uploaded_files": uploaded_files,
-                "failed_files": failed_files
-            })
 
     def process_files_by_name(self) -> Data:
         """Processes and uploads files to an S3 bucket based on their names.
@@ -370,14 +171,6 @@ class S3BucketUploaderComponent(Component):
                     text_content = content_info['text']
                     temp_file_created = False
                     
-                    # Debug logging if enabled
-                    if getattr(self, 'debug_mode', False):
-                        self.log(f"Item {i+1} DEBUG: content_item type: {type(content_item)}")
-                        if hasattr(content_item, 'data'):
-                            self.log(f"Item {i+1} DEBUG: content_item.data type: {type(content_item.data)}")
-                            self.log(f"Item {i+1} DEBUG: content_item.data keys: {list(content_item.data.keys()) if isinstance(content_item.data, dict) else 'not a dict'}")
-                        self.log(f"Item {i+1} DEBUG: content_info: {content_info}")
-                    
                     self.log(f"Item {i+1}: Content extracted from {content_info['source']}")
                     
                     # Handle missing file_path by creating temporary file
@@ -386,65 +179,62 @@ class S3BucketUploaderComponent(Component):
                             error_msg = f"Item {i+1}: No content found (source: {content_info['source']})"
                             self.log(error_msg)
                             
-                            # In debug mode, show what we actually found
-                            if getattr(self, 'debug_mode', False):
-                                try:
-                                    import json
-                                    debug_data = json.dumps(content_item.data if hasattr(content_item, 'data') else str(content_item), indent=2, default=str)[:500]
-                                    self.log(f"Item {i+1} DEBUG: Raw data (first 500 chars): {debug_data}")
-                                except Exception as e:
-                                    self.log(f"Item {i+1} DEBUG: Could not serialize data: {str(e)}")
-                            
                             failed_files.append({"item": i+1, "error": error_msg, "source": content_info['source']})
                             continue
                         
-                        # Generate default filename with correct extension
+                        # Generate full file path with correct extension
                         file_format = getattr(self, 'file_format', 'txt')
-                        if hasattr(self, 'default_filename') and self.default_filename:
-                            base_name = Path(self.default_filename).stem
-                            filename = f"{base_name}.{file_format}"
-                        else:
-                            from datetime import datetime
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            filename = f"data_{timestamp}_{i+1}.{file_format}"
+                        generated_path = self._generate_file_path(i+1, file_format)
+                        filename = Path(generated_path).name  # Extract just the filename for temp file
+                        self.log(f"Item {i+1}: Generated file path: {generated_path}")
                         
                         # Create temporary file
                         import tempfile
                         import os
                         
                         temp_dir = tempfile.gettempdir()
-                        file_path = os.path.join(temp_dir, filename)
+                        temp_file_path = os.path.join(temp_dir, filename)
+                        # Use the generated path for S3 key, but temp file path for local operations
+                        file_path = generated_path
                         
                         try:
                             # Handle binary vs text content for temporary files
-                            if content_info.get('is_binary', False):
+                            is_binary = content_info.get('is_binary', False) or self._is_binary_format(filename)
+                            file_format = getattr(self, 'file_format', 'txt')
+                            
+                            
+                            if is_binary:
                                 # For binary content, write as-is without processing
                                 if isinstance(text_content, str):
                                     # Try to decode if it's base64 or use latin-1
                                     try:
                                         import base64
                                         binary_content = base64.b64decode(text_content)
+                                        self.log(f"Item {i+1}: Decoded base64 binary content for temp file")
                                     except Exception:
                                         binary_content = text_content.encode('latin-1')
+                                        self.log(f"Item {i+1}: Using latin-1 encoding for binary temp file")
                                 else:
                                     binary_content = text_content
                                 
-                                with open(file_path, 'wb') as f:
+                                with open(temp_file_path, 'wb') as f:
                                     f.write(binary_content)
+                                self.log(f"Item {i+1}: Created binary temp file ({len(binary_content)} bytes)")
                             else:
-                                # Process text content and write
-                                processed_content = self._process_content_by_format(text_content, content_info.get('content_type', 'text'))
+                                # Process text content and write (skip processing for binary formats)
+                                processed_content = self._process_content_by_format(text_content, content_info.get('content_type', 'text'), is_binary)
                                 
                                 # Write based on content type
                                 if isinstance(processed_content, bytes):
-                                    with open(file_path, 'wb') as f:
+                                    with open(temp_file_path, 'wb') as f:
                                         f.write(processed_content)
                                 else:
-                                    with open(file_path, 'w', encoding='utf-8') as f:
+                                    with open(temp_file_path, 'w', encoding='utf-8') as f:
                                         f.write(str(processed_content))
+                                self.log(f"Item {i+1}: Created text temp file")
                             
                             temp_file_created = True
-                            temp_files_to_cleanup.append(file_path)
+                            temp_files_to_cleanup.append(temp_file_path)
                             self.log(f"Item {i+1}: Created temporary file {file_path} from {content_info.get('content_type', 'text')} content")
                         except Exception as e:
                             error_msg = f"Item {i+1}: Failed to create temporary file: {str(e)}"
@@ -453,16 +243,17 @@ class S3BucketUploaderComponent(Component):
                             continue
                     
                     # Check if file exists (only for non-temporary files)
-                    file_obj = Path(file_path)
+                    local_file_path = temp_file_path if temp_file_created else file_path
+                    file_obj = Path(local_file_path)
                     if not temp_file_created:
                         if not file_obj.exists():
-                            error_msg = f"File does not exist: {file_path}"
+                            error_msg = f"File does not exist: {local_file_path}"
                             self.log(error_msg)
                             failed_files.append({"item": i+1, "file_path": file_path, "error": error_msg})
                             continue
                         
                         if not file_obj.is_file():
-                            error_msg = f"Path is not a file: {file_path}"
+                            error_msg = f"Path is not a file: {local_file_path}"
                             self.log(error_msg)
                             failed_files.append({"item": i+1, "file_path": file_path, "error": error_msg})
                             continue
@@ -474,20 +265,20 @@ class S3BucketUploaderComponent(Component):
                     # For binary files, add ContentType to upload
                     extra_args = {}
                     if self._is_binary_format(file_path):
-                        extra_args['ContentType'] = self._get_content_type_for_format()
+                        extra_args['ContentType'] = self._get_content_type_for_format(file_path)
                         self.log(f"Item {i+1}: Uploading as binary file with ContentType: {extra_args['ContentType']}")
                     
-                    # Upload to S3
+                    # Upload to S3 (use local file path for reading, S3 key for destination)
                     if extra_args:
                         s3_client.upload_file(
-                            Filename=file_path, 
+                            Filename=local_file_path, 
                             Bucket=self.bucket_name, 
                             Key=normalized_path,
                             ExtraArgs=extra_args
                         )
                     else:
                         s3_client.upload_file(
-                            Filename=file_path, 
+                            Filename=local_file_path, 
                             Bucket=self.bucket_name, 
                             Key=normalized_path
                         )
@@ -601,8 +392,65 @@ class S3BucketUploaderComponent(Component):
                 raise  # Re-raise bucket-specific errors
             raise Exception(f"Error creating S3 client: {str(e)}") from e
 
+    def _generate_file_path(self, item_index: int, file_format: str) -> str:
+        """Generate full file path based on user configuration or defaults.
+        
+        Args:
+            item_index: Index of the current item being processed
+            file_format: File format extension
+            
+        Returns:
+            Complete file path with filename and extension
+        """
+        try:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            date = datetime.now().strftime("%Y%m%d")
+            time = datetime.now().strftime("%H%M%S")
+            
+            # Template variables
+            template_vars = {
+                'timestamp': timestamp,
+                'index': item_index,
+                'format': file_format,
+                'date': date,
+                'time': time
+            }
+            
+            # Get user-defined filename and path
+            user_filename = getattr(self, 'filename', '').strip()
+            user_file_path = getattr(self, 'file_path', '').strip()
+            
+            # Generate filename
+            if user_filename:
+                processed_filename = user_filename.format(**template_vars)
+                # Ensure it doesn't already have extension
+                base_name = Path(processed_filename).stem
+                filename = f"{base_name}.{file_format}"
+            else:
+                # Generate default timestamp-based filename
+                filename = f"data_{timestamp}_{item_index}.{file_format}"
+            
+            # Generate full path
+            if user_file_path:
+                processed_path = user_file_path.format(**template_vars)
+                # Combine path and filename
+                full_path = f"{processed_path.rstrip('/')}/{filename}"
+            else:
+                # Use default "langflow" path when no custom path is specified
+                full_path = f"langflow/{filename}"
+            
+            return full_path
+                
+        except Exception as e:
+            # Fallback to simple default if template processing fails
+            self.log(f"Error processing file path template: {str(e)}, using default")
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return f"langflow/data_{timestamp}_{item_index}.{file_format}"
+
     def _normalize_path(self, file_path) -> str:
-        """Process the file path based on the s3_prefix and strip_path settings.
+        """Process the file path based on the s3_prefix setting.
 
         Args:
             file_path (str): The original file path.
@@ -611,12 +459,7 @@ class S3BucketUploaderComponent(Component):
             str: The processed file path for S3 key.
         """
         prefix = getattr(self, 's3_prefix', '') or ''
-        strip_path = getattr(self, 'strip_path', False)
         processed_path: str = file_path
-
-        if strip_path:
-            # Filename only
-            processed_path = Path(file_path).name
 
         # Concatenate the s3_prefix if it exists
         if prefix:
@@ -797,12 +640,13 @@ class S3BucketUploaderComponent(Component):
         
         return result
     
-    def _process_content_by_format(self, content: str, content_type: str) -> Union[str, bytes]:
+    def _process_content_by_format(self, content: Union[str, bytes], content_type: str, is_binary: bool = False) -> Union[str, bytes]:
         """Process content based on the selected file format.
         
         Args:
             content: The content to process
             content_type: Type of content (text, dataframe, etc.)
+            is_binary: Whether the content is binary
             
         Returns:
             Processed content as string or bytes
@@ -810,6 +654,11 @@ class S3BucketUploaderComponent(Component):
         file_format = getattr(self, 'file_format', 'txt')
         
         if not content:
+            return content
+        
+        # For binary content or binary formats, return as-is without processing
+        if is_binary or file_format in ['zip', 'xlsx', 'parquet', 'jpg', 'png']:
+            self.log(f"Skipping text processing for binary format: {file_format}")
             return content
         
         try:
@@ -880,9 +729,12 @@ class S3BucketUploaderComponent(Component):
             self.log(f"Error processing content for format {file_format}: {str(e)}")
             return content  # Return original content on error
     
-    def _get_content_type_for_format(self) -> str:
+    def _get_content_type_for_format(self, file_path: str = None) -> str:
         """Get the appropriate Content-Type header for the selected file format.
         
+        Args:
+            file_path: Optional file path to help determine content type
+            
         Returns:
             MIME type string
         """
@@ -901,9 +753,19 @@ class S3BucketUploaderComponent(Component):
             'jsonl': 'application/jsonlines',
             'parquet': 'application/octet-stream',
             'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'pdf': 'application/pdf',
-            'zip': 'application/zip'
+            'zip': 'application/zip',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'bmp': 'image/bmp'
         }
+        
+        # If file_path is provided and format is not explicitly set, try to infer from extension
+        if file_path and file_format == 'txt':
+            ext = Path(file_path).suffix.lower().lstrip('.')
+            if ext in content_types:
+                return content_types[ext]
         
         return content_types.get(file_format, 'text/plain')
     
@@ -920,13 +782,13 @@ class S3BucketUploaderComponent(Component):
             return False
             
         binary_extensions = {
-            '.pdf', '.zip', '.xlsx', '.docx', '.pptx', '.jpg', '.jpeg', '.png', 
+            '.zip', '.xlsx', '.docx', '.pptx', '.jpg', '.jpeg', '.png', 
             '.gif', '.bmp', '.ico', '.mp3', '.mp4', '.avi', '.mov', '.exe', 
             '.dll', '.so', '.bin', '.dat', '.db', '.sqlite', '.parquet'
         }
         
         file_format = getattr(self, 'file_format', 'txt')
-        if file_format in ['pdf', 'zip', 'xlsx', 'parquet']:
+        if file_format in ['zip', 'xlsx', 'parquet']:
             return True
             
         extension = Path(file_path).suffix.lower()
@@ -956,6 +818,7 @@ class S3BucketUploaderComponent(Component):
                 return True
                 
         return False
+    
     
     def _read_binary_file(self, file_path: str) -> bytes:
         """Read a file as binary data.

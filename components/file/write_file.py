@@ -30,7 +30,7 @@ class SaveToFileComponent(Component):
     inputs = [
         HandleInput(
             name="input",
-            display_name="Input",
+            display_name="File Content",
             info="The input to save.",
             dynamic=True,
             input_types=["Data", "DataFrame", "Message"],

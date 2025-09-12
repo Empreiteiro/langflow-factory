@@ -35,7 +35,6 @@ class MockDataGeneratorComponent(Component):
         Output(display_name="Data Output", name="data_output", method="generate_data_output"),
     ]
     
-    # Default method for when component is not connected (Langflow may call this)
     def build(self) -> DataFrame:
         """Default build method - returns DataFrame when component is standalone"""
         return self.generate_dataframe_output()
