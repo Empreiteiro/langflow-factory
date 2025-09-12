@@ -30,6 +30,12 @@ class DocumentIntelligenceComponent(BaseFileComponent):
             break
 
     inputs = [
+        DataInput(
+            name="llm",
+            display_name="Language Model",
+            info="Language model to use for document intelligence tasks.",
+            input_types=["LanguageModel"],
+        ),        
         *_base_inputs,
         SortableListInput(
             name="action",
@@ -46,12 +52,6 @@ class DocumentIntelligenceComponent(BaseFileComponent):
             ],
             real_time_refresh=True,
             limit=1,
-        ),
-        DataInput(
-            name="llm",
-            display_name="Language Model",
-            info="Language model to use for document intelligence tasks.",
-            input_types=["LanguageModel"],
         ),
         DropdownInput(
             name="target_language",
