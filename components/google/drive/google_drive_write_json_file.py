@@ -1,5 +1,5 @@
 from langflow.custom import Component
-from langflow.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput, SecretStrInput
+from langflow.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput
 from langflow.schema import Data, DataFrame, Message
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -12,17 +12,18 @@ import re
 
 class GoogleDriveUploader(Component):
     display_name = "Google Drive Uploader"
-    description = "Uploads a file to a specified Google Drive folder."
+    description = "Uploads a file to a specified Google Drive folder or creates a Google Slides presentation or Google Docs document."
     icon = "Google"
     name = "GoogleDriveUploader"
 
     FILE_TYPE_CHOICES = ["txt", "json", "csv", "xlsx", "slides", "docs", "jpg", "mp3"]
 
     inputs = [
-        SecretStrInput(
-            name="service_account_key",
-            display_name="GCP Credentials Secret Key",
-            info="Your Google Cloud Platform service account JSON key as a secret string (complete JSON content).",
+        FileInput(
+            name="service_account_json",
+            display_name="GCP Credentials JSON File",
+            file_types=["json"],
+            info="Upload your Google Cloud Platform service account JSON key.",
             required=True,
             advanced=True,
         ),
@@ -197,11 +198,8 @@ class GoogleDriveUploader(Component):
             # Determine the actual file type to use
             actual_file_type = self._determine_file_type_from_content(file_content, self.file_type)
             
-            # Parse the JSON credentials from the secret key string
-            try:
-                credentials_dict = json.loads(self.service_account_key)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in service account key: {str(e)}")
+            with open(self.service_account_json, "r", encoding="utf-8") as f:
+                credentials_dict = json.load(f)
 
             credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict,

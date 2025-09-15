@@ -99,7 +99,7 @@ class S3BucketUploaderComponent(Component):
             display_name="File Path",
             info="Custom path/directory for the file within the S3 bucket. Variables: {timestamp}, {date}, {time}, {index}, {format}. Example: 'reports/{date}/data_{index}' → 'reports/20241212/data_1.txt'. Leave empty to use default 'langflow' directory.",
             advanced=True,
-        ,
+        ),
         DropdownInput(
             name="file_format",
             display_name="File Format",
