@@ -11,10 +11,10 @@ import aiofiles.os as aiofiles_os
 import httpx
 import validators
 
-from langflow.base.curl.parse import parse_context
-from langflow.custom.custom_component.component import Component
-from langflow.inputs.inputs import TabInput
-from langflow.io import (
+from lfx.base.curl.parse import parse_context
+from lfx.custom.custom_component.component import Component
+from lfx.inputs.inputs import TabInput
+from lfx.io import (
     BoolInput,
     DataInput,
     DropdownInput,
@@ -24,10 +24,9 @@ from langflow.io import (
     Output,
     TableInput,
 )
-from langflow.schema.data import Data
-from langflow.schema.dotdict import dotdict
-from langflow.services.deps import get_settings_service
-from langflow.utils.component_utils import set_current_fields, set_field_advanced, set_field_display
+from lfx.schema.data import Data
+from lfx.schema.dotdict import dotdict
+from lfx.utils.component_utils import set_current_fields, set_field_advanced, set_field_display
 
 # Define fields for each mode
 MODE_FIELDS = {
@@ -131,7 +130,7 @@ class APIRequestComponent(Component):
                     "description": "Header value",
                 },
             ],
-            value=[{"key": "User-Agent", "value": get_settings_service().settings.user_agent}],
+            value=[{"key": "User-Agent", "value": "Langflow/1.0"}],
             advanced=True,
             input_types=["Data"],
             real_time_refresh=True,
@@ -216,16 +215,17 @@ class APIRequestComponent(Component):
         try:
             for item in body:
                 # Unwrap Data objects
+                current_item = item
                 if hasattr(item, "data"):
                     unwrapped_data = item.data
                     # If the unwrapped data is a dict but not key-value format, use it directly
                     if isinstance(unwrapped_data, dict) and not self._is_valid_key_value_item(unwrapped_data):
                         return unwrapped_data
-                    item = unwrapped_data
-                if not self._is_valid_key_value_item(item):
+                    current_item = unwrapped_data
+                if not self._is_valid_key_value_item(current_item):
                     continue
-                key = item["key"]
-                value = self._parse_json_value(item["value"])
+                key = current_item["key"]
+                value = self._parse_json_value(current_item["value"])
                 processed_dict[key] = value
         except (KeyError, TypeError, ValueError) as e:
             self.log(f"Failed to process body list: {e}")
