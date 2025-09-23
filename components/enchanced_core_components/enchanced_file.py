@@ -1,11 +1,11 @@
 from copy import deepcopy
 from typing import Any
 
-from langflow.base.data.base_file import BaseFileComponent
-from langflow.base.data.utils import TEXT_FILE_TYPES, parallel_load_data, parse_text_file_to_data
-from langflow.io import BoolInput, FileInput, IntInput, DropdownInput, Output, StrInput, MessageTextInput
-from langflow.schema.data import Data
-from langflow.schema import DataFrame
+from lfx.base.data.base_file import BaseFileComponent
+from lfx.base.data.utils import TEXT_FILE_TYPES, parallel_load_data, parse_text_file_to_data
+from lfx.io import BoolInput, FileInput, IntInput, DropdownInput, Output, StrInput, MessageTextInput
+from lfx.schema.data import Data
+from lfx.schema import DataFrame
 
 
 class EnhancedFileV2Component(BaseFileComponent):

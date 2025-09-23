@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import BoolInput, MessageInput, MessageTextInput, Output, HandleInput, TableInput, MultilineInput
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.io import BoolInput, MessageInput, MessageTextInput, Output, HandleInput, TableInput, MultilineInput
+from lfx.schema.message import Message
 from typing import Any
 
 

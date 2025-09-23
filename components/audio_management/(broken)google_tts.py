@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, DropdownInput, SecretStrInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import StrInput, DropdownInput, SecretStrInput, Output
+from lfx.schema import Data
 
 from google.cloud import texttospeech
 import os

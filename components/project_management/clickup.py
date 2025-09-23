@@ -1,13 +1,13 @@
-from langflow.custom import Component
-from langflow.io import (
+from lfx.custom import Component
+from lfx.io import (
     StrInput,
     SecretStrInput,
     Output,
     DataInput,
     MessageTextInput,
 )
-from langflow.inputs import SortableListInput
-from langflow.schema import Data
+from lfx.inputs import SortableListInput
+from lfx.schema import Data
 import requests
 
 

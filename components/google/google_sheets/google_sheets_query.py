@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, FileInput, Output, DataInput, IntInput
-from langflow.schema import DataFrame, Data
+from lfx.custom import Component
+from lfx.io import StrInput, FileInput, Output, DataInput, IntInput
+from lfx.schema import DataFrame, Data
 import pandas as pd
 from google.oauth2 import service_account
 from googleapiclient.discovery import build

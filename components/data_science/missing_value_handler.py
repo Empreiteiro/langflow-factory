@@ -1,5 +1,5 @@
-from langflow.custom import Component
-from langflow.io import (
+from lfx.custom import Component
+from lfx.io import (
     DropdownInput,
     StrInput,
     BoolInput,
@@ -7,7 +7,7 @@ from langflow.io import (
     IntInput,
     Output,
 )
-from langflow.schema import DataFrame, Data
+from lfx.schema import DataFrame, Data
 import pandas as pd
 import numpy as np
 

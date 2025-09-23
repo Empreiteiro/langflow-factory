@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Any, Dict, Union
 
-from langflow.custom.custom_component.component import Component
-from langflow.io import (
+from lfx.custom.custom_component.component import Component
+from lfx.io import (
     BoolInput,
     DropdownInput,
     HandleInput,
@@ -11,7 +11,7 @@ from langflow.io import (
     SecretStrInput,
     StrInput,
 )
-from langflow.schema import Data
+from lfx.schema import Data
 
 
 class S3BucketUploaderComponent(Component):

@@ -9,11 +9,11 @@ from langchain_astradb import AstraDBVectorStore, VectorServiceOptions
 from langchain_astradb.utils.astradb import HybridSearchMode, _AstraDBCollectionEnvironment
 from langchain_core.documents import Document
 
-from langflow.base.vectorstores.model import LCVectorStoreComponent, check_cached_vector_store
-from langflow.base.vectorstores.vector_store_connection_decorator import vector_store_connection
-from langflow.helpers.data import docs_to_data
-from langflow.inputs.inputs import FloatInput, NestedDictInput
-from langflow.io import (
+from lfx.base.vectorstores.model import LCVectorStoreComponent, check_cached_vector_store
+from lfx.base.vectorstores.vector_store_connection_decorator import vector_store_connection
+from lfx.helpers.data import docs_to_data
+from lfx.inputs.inputs import FloatInput, NestedDictInput
+from lfx.io import (
     BoolInput,
     DropdownInput,
     HandleInput,
@@ -22,9 +22,9 @@ from langflow.io import (
     SecretStrInput,
     StrInput,
 )
-from langflow.schema.data import Data
-from langflow.serialization import serialize
-from langflow.utils.version import get_version_info
+from lfx.schema.data import Data
+from lfx.serialization import serialize
+from lfx.utils.version import get_version_info
 
 
 @vector_store_connection

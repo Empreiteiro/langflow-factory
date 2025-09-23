@@ -16,16 +16,16 @@ from cryptography.fernet import InvalidToken
 from langchain_chroma import Chroma
 from loguru import logger
 
-from langflow.base.data.kb_utils import get_knowledge_bases
-from langflow.base.models.openai_constants import OPENAI_EMBEDDING_MODEL_NAMES
-from langflow.custom import Component
-from langflow.io import BoolInput, DataFrameInput, DropdownInput, IntInput, Output, SecretStrInput, StrInput, TableInput
-from langflow.schema.data import Data
-from langflow.schema.dotdict import dotdict  # noqa: TC001
-from langflow.schema.table import EditMode
-from langflow.services.auth.utils import decrypt_api_key, encrypt_api_key
-from langflow.services.database.models.user.crud import get_user_by_id
-from langflow.services.deps import get_settings_service, get_variable_service, session_scope
+from lfx.base.data.kb_utils import get_knowledge_bases
+from lfx.base.models.openai_constants import OPENAI_EMBEDDING_MODEL_NAMES
+from lfx.custom import Component
+from lfx.io import BoolInput, DataFrameInput, DropdownInput, IntInput, Output, SecretStrInput, StrInput, TableInput
+from lfx.schema.data import Data
+from lfx.schema.dotdict import dotdict  # noqa: TC001
+from lfx.schema.table import EditMode
+from lfx.services.auth.utils import decrypt_api_key, encrypt_api_key
+from lfx.services.database.models.user.crud import get_user_by_id
+from lfx.services.deps import get_settings_service, get_variable_service, session_scope
 
 HUGGINGFACE_MODEL_NAMES = ["sentence-transformers/all-MiniLM-L6-v2", "sentence-transformers/all-mpnet-base-v2"]
 COHERE_MODEL_NAMES = ["embed-english-v3.0", "embed-multilingual-v3.0"]

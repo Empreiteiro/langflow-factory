@@ -3,14 +3,14 @@ from typing import Any
 
 from composio import Action
 
-from langflow.base.composio.composio_base import ComposioBaseComponent
-from langflow.inputs.inputs import (
+from lfx.base.composio.composio_base import ComposioBaseComponent
+from lfx.inputs.inputs import (
     BoolInput,
     FileInput,
     IntInput,
     MessageTextInput,
 )
-from langflow.logging import logger
+from lfx.logging import logger
 
 
 class ComposioGmailAPIComponent(ComposioBaseComponent):

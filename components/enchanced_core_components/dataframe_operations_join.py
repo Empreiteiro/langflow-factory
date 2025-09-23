@@ -1,8 +1,8 @@
 import pandas as pd
 
-from langflow.custom.custom_component.component import Component
-from langflow.inputs import SortableListInput
-from langflow.io import (
+from lfx.custom.custom_component.component import Component
+from lfx.inputs import SortableListInput
+from lfx.io import (
     BoolInput,
     DataFrameInput,
     DropdownInput,
@@ -11,8 +11,8 @@ from langflow.io import (
     Output,
     StrInput,
 )
-from langflow.logging import logger
-from langflow.schema.dataframe import DataFrame
+from lfx.logging import logger
+from lfx.schema.dataframe import DataFrame
 
 class EnhancedDataFrameOperationsComponent(Component):
     display_name = "Enhanced DataFrame Operations"

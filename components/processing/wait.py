@@ -1,7 +1,7 @@
-from langflow.custom import Component
-from langflow.io import IntInput, Output, MessageTextInput, DataInput, TabInput
-from langflow.schema import Data
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.io import IntInput, Output, MessageTextInput, DataInput, TabInput
+from lfx.schema import Data
+from lfx.schema.message import Message
 import time
 from typing import Any
 

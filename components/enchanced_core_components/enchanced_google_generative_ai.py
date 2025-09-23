@@ -3,13 +3,13 @@ from typing import Any
 import requests
 from pydantic.v1 import SecretStr
 
-from langflow.base.models.google_generative_ai_constants import GOOGLE_GENERATIVE_AI_MODELS
-from langflow.base.models.model import LCModelComponent
-from langflow.field_typing import LanguageModel
-from langflow.field_typing.range_spec import RangeSpec
-from langflow.inputs.inputs import BoolInput, DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput, StrInput, DictInput
-from langflow.logging.logger import logger
-from langflow.schema.dotdict import dotdict
+from lfx.base.models.google_generative_ai_constants import GOOGLE_GENERATIVE_AI_MODELS
+from lfx.base.models.model import LCModelComponent
+from lfx.field_typing import LanguageModel
+from lfx.field_typing.range_spec import RangeSpec
+from lfx.inputs.inputs import BoolInput, DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput, StrInput, DictInput
+from lfx.logging.logger import logger
+from lfx.schema.dotdict import dotdict
 
 
 class GoogleGenerativeAIComponent(LCModelComponent):

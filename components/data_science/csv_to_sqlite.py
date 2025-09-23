@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import FileInput, StrInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import FileInput, StrInput, Output
+from lfx.schema import Data
 import pandas as pd
 import sqlite3
 from pathlib import Path

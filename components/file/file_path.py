@@ -1,9 +1,9 @@
 from typing import Any
 from pathlib import Path
 
-from langflow.custom import Component
-from langflow.io import FileInput, Output
-from langflow.schema import Message
+from lfx.custom import Component
+from lfx.io import FileInput, Output
+from lfx.schema import Message
 
 
 class FilePathComponent(Component):

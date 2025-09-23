@@ -4,9 +4,9 @@ import requests
 import time
 from openai import OpenAI
 
-from langflow.custom import Component
-from langflow.io import HandleInput, Output, TabInput, MessageTextInput, SecretStrInput, DropdownInput, IntInput
-from langflow.schema import Data, Message
+from lfx.custom import Component
+from lfx.io import HandleInput, Output, TabInput, MessageTextInput, SecretStrInput, DropdownInput, IntInput
+from lfx.schema import Data, Message
 
 # Import Google GenAI for Veo video generation
 from google import genai

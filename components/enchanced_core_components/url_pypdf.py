@@ -7,14 +7,14 @@ from loguru import logger
 import PyPDF2
 import io
 
-from langflow.custom.custom_component.component import Component
-from langflow.helpers.data import data_to_text
-from langflow.inputs.inputs import TableInput
-from langflow.io import BoolInput, DropdownInput, IntInput, MessageTextInput, Output
-from langflow.schema import Data
-from langflow.schema.dataframe import DataFrame
-from langflow.schema.message import Message
-from langflow.services.deps import get_settings_service
+from lfx.custom.custom_component.component import Component
+from lfx.helpers.data import data_to_text
+from lfx.inputs.inputs import TableInput
+from lfx.io import BoolInput, DropdownInput, IntInput, MessageTextInput, Output
+from lfx.schema import Data
+from lfx.schema.dataframe import DataFrame
+from lfx.schema.message import Message
+from lfx.services.deps import get_settings_service
 
 
 def is_base64(sb):

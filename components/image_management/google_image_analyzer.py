@@ -209,9 +209,9 @@ For component-related issues, consult:
 - Google Cloud Support (https://cloud.google.com/support)
 """
 
-from langflow.custom import Component
-from langflow.io import StrInput, MessageInput, SecretStrInput, IntInput, BoolInput, DropdownInput, FileInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import StrInput, MessageInput, SecretStrInput, IntInput, BoolInput, DropdownInput, FileInput, Output
+from lfx.schema import Data
 import requests
 import base64
 import mimetypes

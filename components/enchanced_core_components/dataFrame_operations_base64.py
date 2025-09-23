@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import BoolInput, DataFrameInput, DropdownInput, IntInput, MessageTextInput, Output, StrInput
-from langflow.schema import DataFrame
+from lfx.custom import Component
+from lfx.io import BoolInput, DataFrameInput, DropdownInput, IntInput, MessageTextInput, Output, StrInput
+from lfx.schema import DataFrame
 import matplotlib.pyplot as plt
 
 

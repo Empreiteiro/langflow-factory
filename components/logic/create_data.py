@@ -1,7 +1,7 @@
-from langflow.custom import Component
-from langflow.io import StrInput, IntInput, BoolInput, MultilineInput, TableInput, Output, SecretStrInput, FloatInput, HandleInput
-from langflow.schema.message import Message
-from langflow.schema.data import Data
+from lfx.custom import Component
+from lfx.io import StrInput, IntInput, BoolInput, MultilineInput, TableInput, Output, SecretStrInput, FloatInput, HandleInput
+from lfx.schema.message import Message
+from lfx.schema.data import Data
 
 from typing import Any, Dict, List
 import json

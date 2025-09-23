@@ -1,8 +1,8 @@
-from langflow.custom import Component
-from langflow.io import StrInput, DictInput, SecretStrInput, Output, DataInput, IntInput, BoolInput
-from langflow.inputs import SortableListInput
-from langflow.schema import Data
-from langflow.utils.component_utils import set_field_display
+from lfx.custom import Component
+from lfx.io import StrInput, DictInput, SecretStrInput, Output, DataInput, IntInput, BoolInput
+from lfx.inputs import SortableListInput
+from lfx.schema import Data
+from lfx.utils.component_utils import set_field_display
 import requests
 import json
 

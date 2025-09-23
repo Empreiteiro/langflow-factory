@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, IntInput, BoolInput, Output, SecretStrInput
-from langflow.schema import DataFrame, Data
+from lfx.custom import Component
+from lfx.io import StrInput, IntInput, BoolInput, Output, SecretStrInput
+from lfx.schema import DataFrame, Data
 import requests
 import pandas as pd
 import json

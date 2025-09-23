@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import MessageInput, Output
-from langflow.schema import Data, Message
+from lfx.custom import Component
+from lfx.io import MessageInput, Output
+from lfx.schema import Data, Message
 
 class TextStatsLogger(Component):
     display_name = "Text Analyzer"

@@ -1,6 +1,6 @@
-from langflow.base.io.text import TextComponent
-from langflow.io import MultilineInput, Output, SecretStrInput
-from langflow.schema.message import Message
+from lfx.base.io.text import TextComponent
+from lfx.io import MultilineInput, Output, SecretStrInput
+from lfx.schema.message import Message
 
 
 class SecretInputComponent(TextComponent):
@@ -14,7 +14,7 @@ class SecretInputComponent(TextComponent):
         SecretStrInput(
             name="input_value",
             display_name="Secret",
-            info="Text to be passed as input.",
+            info="Secret to be passed as input.",
         ),
     ]
     outputs = [

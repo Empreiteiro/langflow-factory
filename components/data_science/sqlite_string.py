@@ -1,5 +1,5 @@
-from langflow.custom import Component
-from langflow.io import StrInput, DropdownInput, Output
+from lfx.custom import Component
+from lfx.io import StrInput, DropdownInput, Output
 import os
 
 class SQLiteConnectionString(Component):

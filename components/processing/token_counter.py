@@ -1,7 +1,7 @@
-from langflow.custom import Component
-from langflow.io import MessageInput, DropdownInput, Output
-from langflow.schema import Data
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.io import MessageInput, DropdownInput, Output
+from lfx.schema import Data
+from lfx.schema.message import Message
 import tiktoken
 
 class TokenCounter(Component):

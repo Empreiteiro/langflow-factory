@@ -4,10 +4,10 @@ import orjson
 from astrapy.admin import parse_api_endpoint
 from langchain_core.documents import Document
 
-from langflow.base.vectorstores.model import LCVectorStoreComponent, check_cached_vector_store
-from langflow.helpers.data import docs_to_data
-from langflow.serialization import serialize
-from langflow.inputs.inputs import (
+from lfx.base.vectorstores.model import LCVectorStoreComponent, check_cached_vector_store
+from lfx.helpers.data import docs_to_data
+from lfx.serialization import serialize
+from lfx.inputs.inputs import (
     BoolInput,
     DictInput,
     DropdownInput,
@@ -17,7 +17,7 @@ from langflow.inputs.inputs import (
     SecretStrInput,
     StrInput,
 )
-from langflow.schema.data import Data
+from lfx.schema.data import Data
 
 
 class AstraDBGraphVectorStoreComponent(LCVectorStoreComponent):

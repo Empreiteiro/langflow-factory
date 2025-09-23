@@ -1,8 +1,8 @@
 import re
-from langflow.custom import Component
-from langflow.io import DataInput, StrInput, Output
-from langflow.schema import Data
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.io import DataInput, StrInput, Output
+from lfx.schema import Data
+from lfx.schema.message import Message
 
 
 class RegexExtractorComponent(Component):

@@ -1,9 +1,9 @@
 import time
 import requests
-from langflow.custom import Component
-from langflow.inputs import MessageTextInput, DropdownInput, MultilineInput
-from langflow.template import Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.inputs import MessageTextInput, DropdownInput, MultilineInput
+from lfx.template import Output
+from lfx.schema import Data
 
 class SendMessageThenDocument(Component):
     display_name = "Z-API"

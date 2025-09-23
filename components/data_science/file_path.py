@@ -1,10 +1,10 @@
 from copy import deepcopy
 from typing import Any
 
-from langflow.base.data.base_file import BaseFileComponent
-from langflow.base.data.utils import TEXT_FILE_TYPES
-from langflow.io import FileInput, Output
-from langflow.schema.data import Data
+from lfx.base.data.base_file import BaseFileComponent
+from lfx.base.data.utils import TEXT_FILE_TYPES
+from lfx.io import FileInput, Output
+from lfx.schema.data import Data
 
 
 class FilePathComponent(BaseFileComponent):

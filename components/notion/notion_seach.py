@@ -3,10 +3,10 @@ from typing import Any
 import requests
 from pydantic import BaseModel, Field
 
-from langflow.custom import Component
-from langflow.io import DropdownInput, SecretStrInput, StrInput, Output
-from langflow.schema.data import Data
-from langflow.schema.dataframe import DataFrame
+from lfx.custom import Component
+from lfx.io import DropdownInput, SecretStrInput, StrInput, Output
+from lfx.schema.data import Data
+from lfx.schema.dataframe import DataFrame
 
 
 class NotionSearch(Component):

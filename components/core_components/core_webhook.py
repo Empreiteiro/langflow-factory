@@ -1,8 +1,8 @@
 import json
 
-from langflow.custom.custom_component.component import Component
-from langflow.io import MultilineInput, Output
-from langflow.schema.data import Data
+from lfx.custom.custom_component.component import Component
+from lfx.io import MultilineInput, Output
+from lfx.schema.data import Data
 
 
 class WebhookComponent(Component):

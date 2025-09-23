@@ -2,9 +2,9 @@ import importlib
 
 from langchain_experimental.utilities import PythonREPL
 
-from langflow.custom.custom_component.component import Component
-from langflow.io import MultilineInput, Output, StrInput
-from langflow.schema.data import Data
+from lfx.custom.custom_component.component import Component
+from lfx.io import MultilineInput, Output, StrInput
+from lfx.schema.data import Data
 
 
 class PythonREPLComponent(Component):

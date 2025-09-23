@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import FileInput, SecretStrInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import FileInput, SecretStrInput, Output
+from lfx.schema import Data
 from openai import OpenAI
 import base64
 import os

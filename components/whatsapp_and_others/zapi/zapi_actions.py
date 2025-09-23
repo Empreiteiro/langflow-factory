@@ -2,8 +2,8 @@ import json
 import requests
 from typing import Any, Dict, List, Optional
 
-from langflow.custom.custom_component.component import Component
-from langflow.inputs import (
+from lfx.custom.custom_component.component import Component
+from lfx.inputs import (
     MessageTextInput,
     DropdownInput,
     SortableListInput,
@@ -12,10 +12,10 @@ from langflow.inputs import (
     BoolInput,
     IntInput,
 )
-from langflow.io import SecretStrInput, Output
-from langflow.schema import Data
-from langflow.schema.dataframe import DataFrame
-from langflow.logging import logger
+from lfx.io import SecretStrInput, Output
+from lfx.schema import Data
+from lfx.schema.dataframe import DataFrame
+from lfx.logging import logger
 import pandas as pd
 
 

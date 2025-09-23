@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import DataFrameInput, StrInput, DropdownInput, BoolInput, DataInput, Output
-from langflow.schema import Data, DataFrame
+from lfx.custom import Component
+from lfx.io import DataFrameInput, StrInput, DropdownInput, BoolInput, DataInput, Output
+from lfx.schema import Data, DataFrame
 import pandas as pd
 import base64
 import pickle

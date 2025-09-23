@@ -1,10 +1,10 @@
 import pickle
 import pandas as pd
 import json
-from langflow.custom import Component
-from langflow.io import DataInput, Output
-from langflow.inputs import FileInput
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import DataInput, Output
+from lfx.inputs import FileInput
+from lfx.schema import Data
 
 class PickleExecutorComponent(Component):
     display_name = "Pickle Executor"

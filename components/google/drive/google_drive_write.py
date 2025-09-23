@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput, SecretStrInput
-from langflow.schema import Data, DataFrame, Message
+from lfx.custom import Component
+from lfx.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput, SecretStrInput
+from lfx.schema import Data, DataFrame, Message
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2 import service_account

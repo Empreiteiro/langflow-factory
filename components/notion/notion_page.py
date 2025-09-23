@@ -2,10 +2,10 @@ import re
 import requests
 from pydantic import BaseModel, Field
 
-from langflow.custom import Component
-from langflow.io import SecretStrInput, MessageTextInput, Output, DataInput
-from langflow.schema.data import Data
-from langflow.schema.dataframe import DataFrame
+from lfx.custom import Component
+from lfx.io import SecretStrInput, MessageTextInput, Output, DataInput
+from lfx.schema.data import Data
+from lfx.schema.dataframe import DataFrame
 
 
 class NotionPageContent(Component):

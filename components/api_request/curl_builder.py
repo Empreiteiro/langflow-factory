@@ -1,9 +1,9 @@
-from langflow.base.prompts.api_utils import process_prompt_template
-from langflow.custom import Component
-from langflow.inputs.inputs import DefaultPromptField
-from langflow.io import MessageTextInput, Output, PromptInput, StrInput, DataInput
-from langflow.schema.message import Message
-from langflow.template.utils import update_template_values
+from lfx.base.prompts.api_utils import process_prompt_template
+from lfx.custom import Component
+from lfx.inputs.inputs import DefaultPromptField
+from lfx.io import MessageTextInput, Output, PromptInput, StrInput, DataInput
+from lfx.schema.message import Message
+from lfx.template.utils import update_template_values
 import json
 
 

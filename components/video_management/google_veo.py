@@ -1,7 +1,7 @@
 import time
-from langflow.custom import Component
-from langflow.io import StrInput, MultilineInput, SecretStrInput, Output, DropdownInput
-from langflow.schema import Data, Message
+from lfx.custom import Component
+from lfx.io import StrInput, MultilineInput, SecretStrInput, Output, DropdownInput
+from lfx.schema import Data, Message
 
 from google import genai
 from google.genai import types

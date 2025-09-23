@@ -1,7 +1,7 @@
-from langflow.custom import Component
-from langflow.io import StrInput, DropdownInput, SecretStrInput, Output, MessageTextInput
-from langflow.schema import Data
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.io import StrInput, DropdownInput, SecretStrInput, Output, MessageTextInput
+from lfx.schema import Data
+from lfx.schema.message import Message
 import base64
 import requests
 

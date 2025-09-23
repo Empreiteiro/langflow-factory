@@ -4,10 +4,10 @@ from bs4 import BeautifulSoup
 from langchain_community.document_loaders import RecursiveUrlLoader
 from loguru import logger
 
-from langflow.custom.custom_component.component import Component
-from langflow.field_typing.range_spec import RangeSpec
-from langflow.helpers.data import safe_convert
-from langflow.io import (
+from lfx.custom.custom_component.component import Component
+from lfx.field_typing.range_spec import RangeSpec
+from lfx.helpers.data import safe_convert
+from lfx.io import (
     BoolInput,
     DropdownInput,
     IntInput,
@@ -16,9 +16,9 @@ from langflow.io import (
     SliderInput,
     TableInput,
 )
-from langflow.schema.dataframe import DataFrame
-from langflow.schema.message import Message
-from langflow.services.deps import get_settings_service
+from lfx.schema.dataframe import DataFrame
+from lfx.schema.message import Message
+from lfx.services.deps import get_settings_service
 
 DEFAULT_TIMEOUT = 30
 DEFAULT_MAX_DEPTH = 1

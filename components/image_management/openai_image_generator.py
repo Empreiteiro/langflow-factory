@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, IntInput, SecretStrInput, DropdownInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import StrInput, IntInput, SecretStrInput, DropdownInput, Output
+from lfx.schema import Data
 import openai
 
 class DalleImageGenerator(Component):

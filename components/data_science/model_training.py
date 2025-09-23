@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import DataFrameInput, DropdownInput, FloatInput, StrInput, Output
-from langflow.schema import DataFrame, Data
+from lfx.custom import Component
+from lfx.io import DataFrameInput, DropdownInput, FloatInput, StrInput, Output
+from lfx.schema import DataFrame, Data
 import pandas as pd
 
 class TrainTestSplitModel(Component):

@@ -7,11 +7,11 @@ from google.auth.exceptions import RefreshError
 from google.cloud import bigquery
 from google.oauth2.service_account import Credentials
 
-from langflow.custom import Component
-from langflow.io import BoolInput, DataInput, FileInput, MessageTextInput, Output, StrInput
-from langflow.inputs import SortableListInput
-from langflow.schema.dataframe import DataFrame
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import BoolInput, DataInput, FileInput, MessageTextInput, Output, StrInput
+from lfx.inputs import SortableListInput
+from lfx.schema.dataframe import DataFrame
+from lfx.schema import Data
 
 
 class BigQueryExecutorComponent(Component):

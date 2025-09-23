@@ -2,9 +2,9 @@ import json
 import re
 from typing import Any, Dict, Union
 
-from langflow.custom.custom_component.component import Component
-from langflow.io import MultilineInput, Output, BoolInput
-from langflow.schema.data import Data
+from lfx.custom.custom_component.component import Component
+from lfx.io import MultilineInput, Output, BoolInput
+from lfx.schema.data import Data
 
 
 class EnhancedWebhookComponent(Component):

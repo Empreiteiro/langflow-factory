@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import StrInput, MessageInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import StrInput, MessageInput, Output
+from lfx.schema import Data
 
 
 class GetVarComponent(Component):

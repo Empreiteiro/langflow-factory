@@ -3,8 +3,8 @@ import requests
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from langflow.custom import Component
-from langflow.io import (
+from lfx.custom import Component
+from lfx.io import (
     StrInput, 
     MessageTextInput,
     SecretStrInput,
@@ -15,8 +15,8 @@ from langflow.io import (
     DropdownInput,
     TableInput
 )
-from langflow.inputs import SortableListInput
-from langflow.schema import Data
+from lfx.inputs import SortableListInput
+from lfx.schema import Data
 
 
 class WhatsAppEvolutionComponent(Component):

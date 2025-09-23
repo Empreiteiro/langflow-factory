@@ -1,10 +1,10 @@
 import subprocess
 import os
 import sys
-from langflow.custom import Component
-from langflow.inputs import StrInput, DropdownInput
-from langflow.template import Output
-from langflow.schema.message import Message
+from lfx.custom import Component
+from lfx.inputs import StrInput, DropdownInput
+from lfx.template import Output
+from lfx.schema.message import Message
 
 class librariesComponent(Component):
     display_name = "Libraries Install"

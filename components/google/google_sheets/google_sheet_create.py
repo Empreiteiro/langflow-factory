@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import HandleInput, StrInput, FileInput, Output
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import HandleInput, StrInput, FileInput, Output
+from lfx.schema import Data
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json

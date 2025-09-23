@@ -3,10 +3,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import random
 
-from langflow.custom.custom_component.component import Component
-from langflow.io import DropdownInput, IntInput, Output, BoolInput
-from langflow.schema import Data, DataFrame
-from langflow.schema.message import Message
+from lfx.custom.custom_component.component import Component
+from lfx.io import DropdownInput, IntInput, Output, BoolInput
+from lfx.schema import Data, DataFrame
+from lfx.schema.message import Message
 
 
 class MockDataGeneratorComponent(Component):

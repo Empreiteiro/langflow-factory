@@ -21,11 +21,11 @@ SUPPORTED MEDIA SOURCES:
 - Google Drive public links
 """
 
-from langflow.custom import Component
-from langflow.base.data.utils import IMG_FILE_TYPES, TEXT_FILE_TYPES
-from langflow.base.io.chat import ChatComponent
-from langflow.inputs.inputs import BoolInput
-from langflow.io import (
+from lfx.custom import Component
+from lfx.base.data.utils import IMG_FILE_TYPES, TEXT_FILE_TYPES
+from lfx.base.io.chat import ChatComponent
+from lfx.inputs.inputs import BoolInput
+from lfx.io import (
     DropdownInput,
     FileInput,
     MessageTextInput,
@@ -34,8 +34,8 @@ from langflow.io import (
     SecretStrInput,
     TabInput,
 )
-from langflow.schema.message import Message
-from langflow.utils.constants import (
+from lfx.schema.message import Message
+from lfx.utils.constants import (
     MESSAGE_SENDER_AI,
     MESSAGE_SENDER_NAME_USER,
     MESSAGE_SENDER_USER,

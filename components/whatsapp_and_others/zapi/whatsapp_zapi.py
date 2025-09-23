@@ -1,10 +1,10 @@
 import requests
-from langflow.custom import Component
-from langflow.inputs import MessageTextInput, DropdownInput, SortableListInput, MultilineInput, MessageInput
-from langflow.io import SecretStrInput, IntInput
-from langflow.template import Output
-from langflow.schema import Data
-from langflow.schema.dataframe import DataFrame
+from lfx.custom import Component
+from lfx.inputs import MessageTextInput, DropdownInput, SortableListInput, MultilineInput, MessageInput
+from lfx.io import SecretStrInput, IntInput
+from lfx.template import Output
+from lfx.schema import Data
+from lfx.schema.dataframe import DataFrame
 import pandas as pd
 
 class APIRequestComponent(Component):

@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import DataFrameInput, DropdownInput, Output
-from langflow.schema import DataFrame
+from lfx.custom import Component
+from lfx.io import DataFrameInput, DropdownInput, Output
+from lfx.schema import DataFrame
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, Normalizer
 

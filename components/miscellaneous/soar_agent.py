@@ -1,8 +1,8 @@
-from langflow.custom.custom_component.component import Component
-from langflow.inputs import MessageTextInput, StrInput, FileInput
-from langflow.io import Output
-from langflow.schema import Data, Message
-from langflow.logging import logger
+from lfx.custom.custom_component.component import Component
+from lfx.inputs import MessageTextInput, StrInput, FileInput
+from lfx.io import Output
+from lfx.schema import Data, Message
+from lfx.logging import logger
 
 try:
     from pysoarlib import Agent

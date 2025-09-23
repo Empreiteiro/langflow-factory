@@ -1,6 +1,6 @@
-from langflow.custom import Component
-from langflow.io import FileInput, Output, StrInput
-from langflow.schema import Data
+from lfx.custom import Component
+from lfx.io import FileInput, Output, StrInput
+from lfx.schema import Data
 import tempfile
 import os
 

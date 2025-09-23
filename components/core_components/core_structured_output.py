@@ -1,19 +1,19 @@
 from pydantic import BaseModel, Field, create_model
 from trustcall import create_extractor
 
-from langflow.base.models.chat_result import get_chat_result
-from langflow.custom.custom_component.component import Component
-from langflow.helpers.base_model import build_model_from_schema
-from langflow.io import (
+from lfx.base.models.chat_result import get_chat_result
+from lfx.custom.custom_component.component import Component
+from lfx.helpers.base_model import build_model_from_schema
+from lfx.io import (
     HandleInput,
     MessageTextInput,
     MultilineInput,
     Output,
     TableInput,
 )
-from langflow.schema.data import Data
-from langflow.schema.dataframe import DataFrame
-from langflow.schema.table import EditMode
+from lfx.schema.data import Data
+from lfx.schema.dataframe import DataFrame
+from lfx.schema.table import EditMode
 
 
 class StructuredOutputComponent(Component):
