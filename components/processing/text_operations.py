@@ -27,8 +27,9 @@ class TextOperations(Component):
     - **Text to DataFrame**: Convert formatted text tables to DataFrames
     - **Text Analysis**: Count words, characters, lines, etc.
     - **Text Transformations**: Case conversion, trimming, replacement
-    - **Text Filtering**: Filter lines based on conditions
     - **Text Extraction**: Extract specific patterns or sections
+    - **Text Head/Tail**: Extract characters from beginning or end
+    - **Text Stripping**: Remove whitespace or characters from edges
     - **Text Formatting**: Format text with various options
 
     ## Operations Available
@@ -36,8 +37,10 @@ class TextOperations(Component):
     - **Word Count**: Count words, characters, lines in text
     - **Case Conversion**: Convert to uppercase, lowercase, title case
     - **Text Replace**: Replace text patterns with new values
-    - **Text Filter**: Filter lines based on conditions
     - **Text Extract**: Extract text matching patterns
+    - **Text Head**: Extract characters from the beginning of text
+    - **Text Tail**: Extract characters from the end of text
+    - **Text Strip**: Remove whitespace or specific characters from edges
     - **Text Format**: Format text with padding, alignment, etc.
     - **Text Split**: Split text into parts based on delimiters
     - **Text Join**: Join text parts with separators
@@ -50,16 +53,16 @@ class TextOperations(Component):
     name = "TextOperations"
 
     OPERATION_CHOICES = [
-        "Text to DataFrame",
         "Word Count",
-        "Case Conversion", 
+        "Case Conversion",
         "Text Replace",
-        "Text Filter",
         "Text Extract",
-        "Text Format",
-        "Text Split",
+        "Text Head",
+        "Text Tail",
+        "Text Strip",
         "Text Join",
         "Text Clean",
+        "Text to DataFrame",
     ]
 
     inputs = [
@@ -75,16 +78,16 @@ class TextOperations(Component):
             placeholder="Select Operation",
             info="Select the text operation to perform.",
             options=[
-                {"name": "Text to DataFrame", "icon": "table"},
                 {"name": "Word Count", "icon": "hash"},
                 {"name": "Case Conversion", "icon": "type"},
                 {"name": "Text Replace", "icon": "replace"},
-                {"name": "Text Filter", "icon": "filter"},
                 {"name": "Text Extract", "icon": "search"},
-                {"name": "Text Format", "icon": "align-left"},
-                {"name": "Text Split", "icon": "scissors"},
+                {"name": "Text Head", "icon": "chevron-left"},
+                {"name": "Text Tail", "icon": "chevron-right"},
+                {"name": "Text Strip", "icon": "minus"},
                 {"name": "Text Join", "icon": "link"},
                 {"name": "Text Clean", "icon": "sparkles"},
+                {"name": "Text to DataFrame", "icon": "table"},
             ],
             real_time_refresh=True,
             limit=1,
@@ -104,6 +107,7 @@ class TextOperations(Component):
             info="Whether the table has a header row.",
             value=True,
             dynamic=True,
+            advanced=True,
             show=False,
         ),
         # Word Count specific inputs
@@ -113,6 +117,7 @@ class TextOperations(Component):
             info="Include word count in analysis.",
             value=True,
             dynamic=True,
+            advanced=True,
             show=False,
         ),
         BoolInput(
@@ -121,6 +126,7 @@ class TextOperations(Component):
             info="Include character count in analysis.",
             value=True,
             dynamic=True,
+            advanced=True,
             show=False,
         ),
         BoolInput(
@@ -129,6 +135,7 @@ class TextOperations(Component):
             info="Include line count in analysis.",
             value=True,
             dynamic=True,
+            advanced=True,
             show=False,
         ),
         # Case Conversion specific inputs
@@ -138,6 +145,14 @@ class TextOperations(Component):
             options=["uppercase", "lowercase", "title", "capitalize", "swapcase"],
             value="lowercase",
             info="Type of case conversion to apply.",
+            dynamic=True,
+            show=False,
+        ),
+        BoolInput(
+            name="use_regex",
+            display_name="Use Regex",
+            info="Whether to treat search pattern as regex.",
+            value=False,
             dynamic=True,
             show=False,
         ),
@@ -153,39 +168,6 @@ class TextOperations(Component):
             name="replacement_text",
             display_name="Replacement Text",
             info="Text to replace the search pattern with.",
-            dynamic=True,
-            show=False,
-        ),
-        BoolInput(
-            name="use_regex",
-            display_name="Use Regex",
-            info="Whether to treat search pattern as regex.",
-            value=False,
-            dynamic=True,
-            show=False,
-        ),
-        # Text Filter specific inputs
-        StrInput(
-            name="filter_pattern",
-            display_name="Filter Pattern",
-            info="Pattern to filter lines by.",
-            dynamic=True,
-            show=False,
-        ),
-        DropdownInput(
-            name="filter_mode",
-            display_name="Filter Mode",
-            options=["contains", "starts_with", "ends_with", "equals", "regex"],
-            value="contains",
-            info="How to apply the filter pattern.",
-            dynamic=True,
-            show=False,
-        ),
-        BoolInput(
-            name="invert_filter",
-            display_name="Invert Filter",
-            info="Show lines that DON'T match the pattern.",
-            value=False,
             dynamic=True,
             show=False,
         ),
@@ -205,55 +187,47 @@ class TextOperations(Component):
             dynamic=True,
             show=False,
         ),
-        # Text Format specific inputs
+        # Text Head specific inputs
+        IntInput(
+            name="head_characters",
+            display_name="Characters from Start",
+            info="Number of characters to extract from the beginning of text.",
+            value=100,
+            dynamic=True,
+            show=False,
+        ),
+        # Text Tail specific inputs
+        IntInput(
+            name="tail_characters",
+            display_name="Characters from End",
+            info="Number of characters to extract from the end of text.",
+            value=100,
+            dynamic=True,
+            show=False,
+        ),
+        # Text Strip specific inputs
         DropdownInput(
-            name="format_type",
-            display_name="Format Type",
-            options=["pad", "center", "justify", "wrap", "indent"],
-            value="pad",
-            info="Type of text formatting to apply.",
-            dynamic=True,
-            show=False,
-        ),
-        IntInput(
-            name="format_width",
-            display_name="Format Width",
-            info="Width for formatting operations.",
-            value=80,
+            name="strip_mode",
+            display_name="Strip Mode",
+            options=["both", "left", "right"],
+            value="both",
+            info="Which sides to strip whitespace from.",
             dynamic=True,
             show=False,
         ),
         StrInput(
-            name="format_fill",
-            display_name="Format Fill Character",
-            info="Character to use for padding/filling.",
-            value=" ",
-            dynamic=True,
-            show=False,
-        ),
-        # Text Split specific inputs
-        StrInput(
-            name="split_delimiter",
-            display_name="Split Delimiter",
-            info="Delimiter to split text by.",
-            value=",",
-            dynamic=True,
-            show=False,
-        ),
-        IntInput(
-            name="max_splits",
-            display_name="Max Splits",
-            info="Maximum number of splits to perform.",
-            value=-1,
+            name="strip_characters",
+            display_name="Characters to Strip",
+            info="Specific characters to remove (leave empty for whitespace).",
+            value="",
             dynamic=True,
             show=False,
         ),
         # Text Join specific inputs
-        StrInput(
-            name="join_separator",
-            display_name="Join Separator",
-            info="Separator to join text parts with.",
-            value=" ",
+        MessageTextInput(
+            name="text_input_2",
+            display_name="Second Text Input",
+            info="Second text to join with the first text.",
             dynamic=True,
             show=False,
         ),
@@ -284,12 +258,7 @@ class TextOperations(Component):
         ),
     ]
 
-    outputs = [
-        Output(display_name="DataFrame", name="dataframe", method="get_dataframe"),
-        Output(display_name="Text", name="text", method="get_text"),
-        Output(display_name="Data", name="data", method="get_data"),
-        Output(display_name="Message", name="message", method="get_message"),
-    ]
+    outputs = []
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -304,11 +273,10 @@ class TextOperations(Component):
             "count_words", "count_characters", "count_lines",
             "case_type",
             "search_pattern", "replacement_text", "use_regex",
-            "filter_pattern", "filter_mode", "invert_filter",
             "extract_pattern", "max_matches",
-            "format_type", "format_width", "format_fill",
-            "split_delimiter", "max_splits",
-            "join_separator",
+            "head_characters", "tail_characters",
+            "strip_mode", "strip_characters",
+            "text_input_2",
             "remove_extra_spaces", "remove_special_chars", "remove_empty_lines",
         ]
         
@@ -337,28 +305,57 @@ class TextOperations(Component):
                 build_config["search_pattern"]["show"] = True
                 build_config["replacement_text"]["show"] = True
                 build_config["use_regex"]["show"] = True
-            elif operation_name == "Text Filter":
-                build_config["filter_pattern"]["show"] = True
-                build_config["filter_mode"]["show"] = True
-                build_config["invert_filter"]["show"] = True
             elif operation_name == "Text Extract":
                 build_config["extract_pattern"]["show"] = True
                 build_config["max_matches"]["show"] = True
-            elif operation_name == "Text Format":
-                build_config["format_type"]["show"] = True
-                build_config["format_width"]["show"] = True
-                build_config["format_fill"]["show"] = True
-            elif operation_name == "Text Split":
-                build_config["split_delimiter"]["show"] = True
-                build_config["max_splits"]["show"] = True
+            elif operation_name == "Text Head":
+                build_config["head_characters"]["show"] = True
+            elif operation_name == "Text Tail":
+                build_config["tail_characters"]["show"] = True
+            elif operation_name == "Text Strip":
+                build_config["strip_mode"]["show"] = True
+                build_config["strip_characters"]["show"] = True
             elif operation_name == "Text Join":
-                build_config["join_separator"]["show"] = True
+                build_config["text_input_2"]["show"] = True
             elif operation_name == "Text Clean":
                 build_config["remove_extra_spaces"]["show"] = True
                 build_config["remove_special_chars"]["show"] = True
                 build_config["remove_empty_lines"]["show"] = True
 
         return build_config
+
+    def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
+        """Create dynamic outputs based on selected operation."""
+        if field_name == "operation":
+            frontend_node["outputs"] = []
+            
+            # Get the selected operation
+            if isinstance(field_value, list) and len(field_value) > 0:
+                operation_name = field_value[0].get("name", "")
+            else:
+                operation_name = ""
+            
+            # Add outputs based on operation type
+            if operation_name == "Word Count":
+                frontend_node["outputs"].append(
+                    Output(display_name="Data", name="data", method="get_data")
+                )
+            elif operation_name == "Text to DataFrame":
+                frontend_node["outputs"].append(
+                    Output(display_name="DataFrame", name="dataframe", method="get_dataframe")
+                )
+            elif operation_name == "Text Join":
+                frontend_node["outputs"].append(
+                    Output(display_name="Text", name="text", method="get_text")
+                )
+            
+            # Add Message output for all operations except Word Count, Text to DataFrame, and Text Join
+            if operation_name not in ["Word Count", "Text to DataFrame", "Text Join"]:
+                frontend_node["outputs"].append(
+                    Output(display_name="Message", name="message", method="get_message")
+                )
+        
+        return frontend_node
 
     def get_operation_name(self) -> str:
         """Get the selected operation name."""
@@ -383,14 +380,14 @@ class TextOperations(Component):
             return self.case_conversion(text)
         elif operation == "Text Replace":
             return self.text_replace(text)
-        elif operation == "Text Filter":
-            return self.text_filter(text)
         elif operation == "Text Extract":
             return self.text_extract(text)
-        elif operation == "Text Format":
-            return self.text_format(text)
-        elif operation == "Text Split":
-            return self.text_split(text)
+        elif operation == "Text Head":
+            return self.text_head(text)
+        elif operation == "Text Tail":
+            return self.text_tail(text)
+        elif operation == "Text Strip":
+            return self.text_strip(text)
         elif operation == "Text Join":
             return self.text_join(text)
         elif operation == "Text Clean":
@@ -528,48 +525,6 @@ class TextOperations(Component):
             self.log(f"Error replacing text: {str(e)}")
             return text
 
-    def text_filter(self, text: str) -> str:
-        """Filter lines based on pattern."""
-        try:
-            filter_pattern = getattr(self, "filter_pattern", "")
-            filter_mode = getattr(self, "filter_mode", "contains")
-            invert_filter = getattr(self, "invert_filter", False)
-            
-            if not filter_pattern:
-                return text
-            
-            lines = text.split('\n')
-            filtered_lines = []
-            
-            for line in lines:
-                match = False
-                
-                if filter_mode == "contains":
-                    match = filter_pattern in line
-                elif filter_mode == "starts_with":
-                    match = line.startswith(filter_pattern)
-                elif filter_mode == "ends_with":
-                    match = line.endswith(filter_pattern)
-                elif filter_mode == "equals":
-                    match = line.strip() == filter_pattern
-                elif filter_mode == "regex":
-                    match = bool(re.search(filter_pattern, line))
-                
-                if invert_filter:
-                    match = not match
-                
-                if match:
-                    filtered_lines.append(line)
-            
-            result = '\n'.join(filtered_lines)
-            self._result = result
-            self.log(f"Text filtered: {len(filtered_lines)} lines remaining")
-            return result
-            
-        except Exception as e:
-            self.log(f"Error filtering text: {str(e)}")
-            return text
-
     def text_extract(self, text: str) -> List[str]:
         """Extract text matching patterns."""
         try:
@@ -591,46 +546,76 @@ class TextOperations(Component):
             self.log(f"Error extracting text: {str(e)}")
             return []
 
-    def text_format(self, text: str) -> str:
-        """Format text with various options."""
+    def text_head(self, text: str) -> str:
+        """Extract characters from the beginning of text."""
         try:
-            format_type = getattr(self, "format_type", "pad")
-            format_width = getattr(self, "format_width", 80)
-            format_fill = getattr(self, "format_fill", " ")
+            head_characters = getattr(self, "head_characters", 100)
             
-            if format_type == "pad":
-                result = text.ljust(format_width, format_fill)
-            elif format_type == "center":
-                result = text.center(format_width, format_fill)
-            elif format_type == "justify":
-                # Simple justification by adding spaces
-                words = text.split()
-                if len(words) > 1:
-                    total_spaces = format_width - len(text.replace(" ", ""))
-                    spaces_per_gap = total_spaces // (len(words) - 1)
-                    extra_spaces = total_spaces % (len(words) - 1)
-                    result = words[0]
-                    for i, word in enumerate(words[1:], 1):
-                        spaces = spaces_per_gap + (1 if i <= extra_spaces else 0)
-                        result += " " * spaces + word
-                else:
-                    result = text
-            elif format_type == "wrap":
-                import textwrap
-                result = textwrap.fill(text, width=format_width)
-            elif format_type == "indent":
-                indent = format_fill * format_width
-                result = '\n'.join(indent + line for line in text.split('\n'))
-            else:
-                result = text
+            if head_characters <= 0:
+                return ""
             
+            result = text[:head_characters]
             self._result = result
-            self.log(f"Text formatted with {format_type}")
+            self.log(f"Extracted {len(result)} characters from start")
             return result
             
         except Exception as e:
-            self.log(f"Error formatting text: {str(e)}")
+            self.log(f"Error extracting head: {str(e)}")
             return text
+
+    def text_tail(self, text: str) -> str:
+        """Extract characters from the end of text."""
+        try:
+            tail_characters = getattr(self, "tail_characters", 100)
+            
+            if tail_characters <= 0:
+                return ""
+            
+            result = text[-tail_characters:]
+            self._result = result
+            self.log(f"Extracted {len(result)} characters from end")
+            return result
+            
+        except Exception as e:
+            self.log(f"Error extracting tail: {str(e)}")
+            return text
+
+    def text_strip(self, text: str) -> str:
+        """Remove whitespace or specific characters from the beginning and/or end of text."""
+        try:
+            strip_mode = getattr(self, "strip_mode", "both")
+            strip_characters = getattr(self, "strip_characters", "")
+            
+            if strip_characters:
+                # Strip specific characters
+                if strip_mode == "both":
+                    result = text.strip(strip_characters)
+                elif strip_mode == "left":
+                    result = text.lstrip(strip_characters)
+                elif strip_mode == "right":
+                    result = text.rstrip(strip_characters)
+                else:
+                    result = text.strip(strip_characters)
+            else:
+                # Strip whitespace (default behavior)
+                if strip_mode == "both":
+                    result = text.strip()
+                elif strip_mode == "left":
+                    result = text.lstrip()
+                elif strip_mode == "right":
+                    result = text.rstrip()
+                else:
+                    result = text.strip()
+            
+            self._result = result
+            removed_chars = len(text) - len(result)
+            self.log(f"Stripped {removed_chars} characters from {strip_mode} side(s)")
+            return result
+            
+        except Exception as e:
+            self.log(f"Error stripping text: {str(e)}")
+            return text
+
 
     def text_split(self, text: str) -> List[str]:
         """Split text by delimiter."""
@@ -655,33 +640,31 @@ class TextOperations(Component):
             return [text]
 
     def text_join(self, text: str) -> str:
-        """Join text parts with separator."""
+        """Join two texts with line break separator."""
         try:
-            join_separator = getattr(self, "join_separator", " ")
+            text_input_2 = getattr(self, "text_input_2", "")
+            join_separator = "\n"  # Line break as default separator
             
-            # Split by common delimiters first
-            lines = text.split('\n')
-            parts = []
-            for line in lines:
-                if ',' in line:
-                    parts.extend(line.split(','))
-                elif ';' in line:
-                    parts.extend(line.split(';'))
-                elif '|' in line:
-                    parts.extend(line.split('|'))
-                else:
-                    parts.append(line)
+            # Get both texts
+            text1 = str(text) if text else ""
+            text2 = str(text_input_2) if text_input_2 else ""
             
-            # Clean up and join
-            parts = [part.strip() for part in parts if part.strip()]
-            result = join_separator.join(parts)
+            # Join the two texts with line break
+            if text1 and text2:
+                result = f"{text1}{join_separator}{text2}"
+            elif text1:
+                result = text1
+            elif text2:
+                result = text2
+            else:
+                result = ""
             
             self._result = result
-            self.log(f"Text joined with '{join_separator}'")
+            self.log("Texts joined with line break separator")
             return result
             
         except Exception as e:
-            self.log(f"Error joining text: {str(e)}")
+            self.log(f"Error joining texts: {str(e)}")
             return text
 
     def text_clean(self, text: str) -> str:
@@ -712,73 +695,67 @@ class TextOperations(Component):
             return text
 
     def get_dataframe(self) -> DataFrame:
-        """Return result as DataFrame if applicable."""
+        """Return result as DataFrame - only for Text to DataFrame operation."""
         operation = self.get_operation_name()
         
-        # For Text to DataFrame operation, process the text directly
+        # Only return DataFrame for Text to DataFrame operation
         if operation == "Text to DataFrame":
             text = getattr(self, "text_input", "")
             if text:
                 return self.text_to_dataframe(text)
             return DataFrame(pd.DataFrame())
         
-        # For other operations, use stored result
-        if self._result is not None:
-            if isinstance(self._result, dict):
-                df = pd.DataFrame([self._result])
-            elif isinstance(self._result, list):
-                df = pd.DataFrame({"result": self._result})
-            else:
-                df = pd.DataFrame({"result": [str(self._result)]})
-            self.log(f"Returning DataFrame with {len(df)} rows and columns: {list(df.columns)}")
-            return DataFrame(df)
+        # For all other operations, return empty DataFrame
         return DataFrame(pd.DataFrame())
 
     def get_text(self) -> str:
-        """Return result as text."""
-        if self._result is not None:
-            if isinstance(self._result, list):
-                return '\n'.join(str(item) for item in self._result)
-            elif isinstance(self._result, dict):
-                return '\n'.join(f"{k}: {v}" for k, v in self._result.items())
-            else:
-                return str(self._result)
+        """Return result as text - for text operations only."""
+        operation = self.get_operation_name()
+        
+        # Text operations that should return text
+        text_operations = [
+            "Case Conversion", "Text Replace", "Text Extract", 
+            "Text Head", "Text Tail", "Text Strip", 
+            "Text Format", "Text Join", "Text Clean"
+        ]
+        
+        if operation in text_operations:
+            result = self.process_text()
+            if result is not None:
+                if isinstance(result, list):
+                    return '\n'.join(str(item) for item in result)
+                else:
+                    return str(result)
+        
         return ""
 
     def get_data(self) -> Data:
-        """Return result as Data object."""
-        result = self.process_text()
-        if result is not None:
-            if isinstance(result, dict):
-                return Data(data=result)
-            elif isinstance(result, list):
-                return Data(data={"items": result})
-            else:
-                return Data(data={"result": str(result)})
+        """Return result as Data object - only for Word Count operation."""
+        operation = self.get_operation_name()
+        
+        # Only return Data for Word Count operation
+        if operation == "Word Count":
+            result = self.process_text()
+            if result is not None:
+                if isinstance(result, dict):
+                    return Data(data=result)
+                elif isinstance(result, list):
+                    return Data(data={"items": result})
+                else:
+                    return Data(data={"result": str(result)})
+        
         return Data(data={})
 
     def get_message(self) -> Message:
-        """Return result as formatted message."""
-        operation = self.get_operation_name()
+        """Return result as simple message with just the converted text."""
         result = self.process_text()
         
         if result is not None:
-            if operation == "Word Count" and isinstance(result, dict):
-                message_lines = ["📊 Text Analysis Results:"]
-                message_lines.append("=" * 30)
-                for key, value in result.items():
-                    message_lines.append(f"• {key.replace('_', ' ').title()}: {value}")
-            elif isinstance(result, list):
-                message_lines = [f"📋 {operation} Results:"]
-                message_lines.append("=" * 30)
-                for i, item in enumerate(result, 1):
-                    message_lines.append(f"{i}. {item}")
+            if isinstance(result, list):
+                message_text = '\n'.join(str(item) for item in result)
             else:
-                message_lines = [f"📝 {operation} Result:"]
-                message_lines.append("=" * 30)
-                message_lines.append(str(result))
+                message_text = str(result)
         else:
-            message_lines = ["❌ No result available"]
+            message_text = ""
         
-        message_text = '\n'.join(message_lines)
         return Message(text=message_text)
