@@ -8,7 +8,7 @@ from google.cloud import bigquery
 from google.oauth2.service_account import Credentials
 
 from langflow.custom import Component
-from langflow.io import BoolInput, DataInput, FileInput, MessageTextInput, Output, StrInput, SecretStrInput, HandleInput
+from langflow.io import BoolInput, DataInput, FileInput, MessageTextInput, Output, StrInput, SecretStrInput, HandleInput, MultilineInput
 from langflow.inputs import SortableListInput
 from langflow.schema.dataframe import DataFrame
 from langflow.schema import Data
@@ -56,7 +56,7 @@ class BigQueryExecutorComponent(Component):
             real_time_refresh=True,
             limit=1,
         ),
-        MessageTextInput(
+        MultilineInput(
             name="query",
             display_name="SQL Query",
             info="The SQL query to execute on BigQuery.",

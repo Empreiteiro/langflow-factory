@@ -1,10 +1,11 @@
 from lfx.custom import Component
-from lfx.io import HandleInput, StrInput, FileInput, Output
+from lfx.io import HandleInput, StrInput, FileInput, Output, SecretStrInput, MessageInput
 from lfx.schema import Data
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json
 import pandas as pd
+from datetime import datetime, date
 
 class CreateGoogleSheet(Component):
     display_name = "Create Google Sheet"
@@ -20,13 +21,14 @@ class CreateGoogleSheet(Component):
             input_types=["Data", "DataFrame"],
             required=True
         ),
-        FileInput(
-            name="credentials_file",
-            display_name="Google Credentials File",
-            file_types=["json"],
+        SecretStrInput(
+            name="service_account_key",
+            display_name="GCP Credentials Secret Key",
+            info="Your Google Cloud Platform service account JSON key as a secret string (complete JSON content).",
             required=True,
+            advanced=True,
         ),
-        StrInput(
+        MessageInput(
             name="sheet_name",
             display_name="Sheet Name",
             info="The name for the new sheet to be created.",
@@ -51,13 +53,46 @@ class CreateGoogleSheet(Component):
         Output(name="result", display_name="Result", method="create_sheet")
     ]
 
+    def _clean_value(self, value):
+        """Clean and format values for Google Sheets compatibility."""
+        if value is None or pd.isna(value):
+            return ""
+        elif isinstance(value, (datetime, date)):
+            return value.isoformat()
+        elif isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        elif isinstance(value, (int, float)):
+            # Handle NaN values
+            if pd.isna(value):
+                return ""
+            return value
+        elif isinstance(value, bool):
+            return str(value)
+        elif isinstance(value, (list, dict)):
+            return json.dumps(value)
+        else:
+            # Convert to string and handle any special characters
+            str_value = str(value)
+            # Remove problematic characters that might cause JSON issues
+            if ".638000+00:00" in str_value or "Timestamp" in str_value:
+                # This looks like a pandas timestamp, try to parse it
+                try:
+                    if hasattr(value, 'isoformat'):
+                        return value.isoformat()
+                    else:
+                        return pd.to_datetime(value).isoformat()
+                except:
+                    return str_value
+            return str_value
+
     def create_sheet(self) -> Data:
         try:
-            if not isinstance(self.credentials_file, str):
-                raise ValueError("Expected credentials_file to be a file path string.")
-
-            with open(self.credentials_file, "r", encoding="utf-8") as f:
-                credentials_dict = json.load(f)
+            # Parse the JSON credentials from the secret key string
+            try:
+                credentials_dict = json.loads(self.service_account_key)
+            except json.JSONDecodeError as e:
+                msg = f"Invalid JSON in service account key: {str(e)}"
+                raise ValueError(msg) from e
 
             credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict,
@@ -75,8 +110,26 @@ class CreateGoogleSheet(Component):
 
             # Handle DataFrame
             if isinstance(raw_payload, pd.DataFrame):
-                # Convert DataFrame to list of dictionaries
-                rows = raw_payload.to_dict('records')
+                # Convert DataFrame to list of dictionaries, handling all data types properly
+                self.log(f"Processing DataFrame with shape: {raw_payload.shape}")
+                self.log(f"DataFrame columns: {list(raw_payload.columns)}")
+                self.log(f"DataFrame dtypes: {raw_payload.dtypes.to_dict()}")
+                
+                # Clean the DataFrame first - replace NaN values and convert problematic types
+                cleaned_df = raw_payload.copy()
+                
+                # Convert any datetime columns to string format
+                for col in cleaned_df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(cleaned_df[col]):
+                        cleaned_df[col] = cleaned_df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+                        self.log(f"Converted datetime column '{col}' to string format")
+                
+                # Fill NaN values with empty strings
+                cleaned_df = cleaned_df.fillna("")
+                
+                # Convert to list of dictionaries
+                rows = cleaned_df.to_dict('records')
+                self.log(f"Converted DataFrame to {len(rows)} rows")
             elif isinstance(raw_payload, str):
                 try:
                     raw_payload = json.loads(raw_payload)
@@ -111,9 +164,12 @@ class CreateGoogleSheet(Component):
             # Create the spreadsheet
             tab_name = self.tab_name if self.tab_name else "Sheet1"
             
+            # Extract text from MessageInput
+            sheet_name_text = self.sheet_name.text if hasattr(self.sheet_name, 'text') else str(self.sheet_name)
+            
             spreadsheet_body = {
                 "properties": {
-                    "title": self.sheet_name
+                    "title": sheet_name_text
                 },
                 "sheets": [
                     {
@@ -150,9 +206,23 @@ class CreateGoogleSheet(Component):
 
             # Prepare data for insertion
             values_to_insert = [headers]  # Start with headers
-            values_to_insert.extend([
-                [item.get(col, "") for col in headers] for item in rows
-            ])
+            
+            # Process each row with better error handling
+            for i, row in enumerate(rows):
+                try:
+                    cleaned_row = []
+                    for col in headers:
+                        raw_value = row.get(col, "")
+                        cleaned_value = self._clean_value(raw_value)
+                        cleaned_row.append(cleaned_value)
+                    values_to_insert.append(cleaned_row)
+                except Exception as e:
+                    self.log(f"Error processing row {i}: {str(e)}")
+                    self.log(f"Problematic row data: {row}")
+                    # Add a row with empty strings if there's an error
+                    values_to_insert.append(["" for _ in headers])
+            
+            self.log(f"Prepared {len(values_to_insert)} rows for insertion (including header)")
 
             # Insert data into the sheet
             sheets_service.spreadsheets().values().update(
@@ -162,12 +232,12 @@ class CreateGoogleSheet(Component):
                 body={"values": values_to_insert}
             ).execute()
 
-            self.status = f"Created new sheet '{self.sheet_name}' with {len(rows)} data rows"
+            self.status = f"Created new sheet '{sheet_name_text}' with {len(rows)} data rows"
             return Data(data={
                 "status": "success",
                 "spreadsheet_id": spreadsheet_id,
                 "spreadsheet_url": spreadsheet_url,
-                "sheet_name": self.sheet_name,
+                "sheet_name": sheet_name_text,
                 "tab_name": tab_name,
                 "rows_inserted": len(rows),
                 "headers": headers,
