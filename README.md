@@ -66,42 +66,6 @@ This repository includes 56+ pre-built templates organized by:
 |------|---------|
 | [View Template](https://github.com/Empreiteiro/langflow-templates/blob/master/ai_patterns/agentic_rag/ingestion_router.json) | [Ingestion Router Flow](https://github.com/Empreiteiro/langflow-templates/raw/master/assets/previews/ingestion_router_preview.png) |
 
-> **Note**: If preview images don't load, you can view them directly at the template repository.
-
-### Prerequisites
-- Python 3.8+
-- Langflow installed and running
-- Required API keys for integrations
-
-### Installation
-
-1. **Clone the repository:**
-```bash
-git clone https://github.com/Empreiteiro/langflow-factory.git
-cd langflow-factory
-```
-
-2. **Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Add components to Langflow:**
-   - Copy component files to your Langflow custom components directory
-   - Or load directly through Langflow's component upload feature
-
-### Quick Start Example
-
-```python
-# Example: Using the Enhanced API Request component
-from components.api_request.enchanced_api_request import EnhancedAPIRequest
-
-component = EnhancedAPIRequest()
-component.url = "https://api.example.com/data"
-component.method = "GET"
-result = component.make_request()
-```
-
 ## 🔧 Component Categories
 
 ### 📡 **API & External Services**
@@ -154,18 +118,6 @@ result = component.make_request()
 4. Add tests for new components
 5. Commit with descriptive messages
 6. Push and create a Pull Request
-
-## 📋 Component Checklist
-
-When creating new components:
-- [ ] Inherits from `Component`
-- [ ] Implements proper error handling
-- [ ] Uses `self.log()` for logging
-- [ ] Includes input validation
-- [ ] Has comprehensive docstrings
-- [ ] Includes example usage
-- [ ] Has corresponding tests
-- [ ] Follows naming conventions
 
 ## 🔐 Security
 
