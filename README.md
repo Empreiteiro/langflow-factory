@@ -56,6 +56,13 @@ langflow-factory/
 
 ## 🎯 Getting Started
 
+### 📋 Templates Available
+Ready-to-use Langflow templates are available at: **[https://github.com/Empreiteiro/langflow-templates](https://github.com/Empreiteiro/langflow-templates)**
+
+This repository includes 56+ pre-built templates organized by:
+- **AI Patterns**: Agentic RAG, Document Intelligence, Multi-Modal Processing, Structured Output Generation
+- **Business Functions**: Data Analytics, Financial Services, Sales & Marketing Automation, Social & Brand Intelligence, Programming & Developer Productivity
+
 ### Prerequisites
 - Python 3.8+
 - Langflow installed and running
