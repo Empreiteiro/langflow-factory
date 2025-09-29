@@ -61,11 +61,6 @@ This repository includes 56+ pre-built templates organized by:
 - **AI Patterns**: Agentic RAG, Document Intelligence, Multi-Modal Processing, Structured Output Generation
 - **Business Functions**: Data Analytics, Financial Services, Sales & Marketing Automation, Social & Brand Intelligence, Programming & Developer Productivity
 
-#### Template Preview Example
-| Flow | Preview |
-|------|---------|
-| [View Template](https://github.com/Empreiteiro/langflow-templates/blob/master/ai_patterns/agentic_rag/ingestion_router.json) | [Ingestion Router Flow](https://github.com/Empreiteiro/langflow-templates/raw/master/assets/previews/ingestion_router_preview.png) |
-
 ## 🔧 Component Categories
 
 ### 📡 **API & External Services**
