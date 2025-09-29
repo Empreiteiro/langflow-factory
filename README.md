@@ -49,8 +49,6 @@ langflow-factory/
 │   ├── google_sheets/         # Sheets API components
 │   ├── image_generators/      # Image generation tools
 │   └── [other categories]/
-├── flows/                     # Example flows and configurations
-├── tests/                     # Component testing framework
 └── scripts/                   # Utility scripts
 ```
 
@@ -62,6 +60,13 @@ Ready-to-use Langflow templates are available at: **[https://github.com/Empreite
 This repository includes 56+ pre-built templates organized by:
 - **AI Patterns**: Agentic RAG, Document Intelligence, Multi-Modal Processing, Structured Output Generation
 - **Business Functions**: Data Analytics, Financial Services, Sales & Marketing Automation, Social & Brand Intelligence, Programming & Developer Productivity
+
+#### Template Preview Example
+| Flow | Preview |
+|------|---------|
+| [View Template](https://github.com/Empreiteiro/langflow-templates/blob/master/ai_patterns/agentic_rag/ingestion_router.json) | [Ingestion Router Flow](https://github.com/Empreiteiro/langflow-templates/raw/master/assets/previews/ingestion_router_preview.png) |
+
+> **Note**: If preview images don't load, you can view them directly at the template repository.
 
 ### Prerequisites
 - Python 3.8+
@@ -128,54 +133,6 @@ result = component.make_request()
 - `dataFrame_operations` - Pandas DataFrame utilities
 - `enchanced_structured_output.py` - Type-safe outputs
 
-## 🧪 Testing
-
-Run the test suite to ensure components work correctly:
-
-```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific component tests
-python -m pytest tests/test_api_request.py
-
-# Test YouTube download functionality
-python scripts/test_youtube_download.py
-```
-
-## 🔧 Troubleshooting
-
-### YouTube Download Issues
-
-If you encounter "Error downloading video from URL: Failed to download media from URL: Failed to download from YouTube: No file downloaded", follow these steps:
-
-1. **Install yt-dlp:**
-```bash
-pip install yt-dlp
-```
-
-2. **Install FFmpeg (required for video processing):**
-   - **Windows:** `winget install FFmpeg` or download from https://ffmpeg.org/download.html
-   - **Mac:** `brew install ffmpeg`
-   - **Linux:** `sudo apt install ffmpeg`
-
-3. **Run the installation script:**
-```bash
-python scripts/install_dependencies.py
-```
-
-4. **Test the functionality:**
-```bash
-python scripts/test_youtube_download.py
-```
-
-5. **Common issues:**
-   - **Private videos:** YouTube private videos cannot be downloaded
-   - **Age-restricted content:** May require authentication
-   - **Region restrictions:** Some videos are not available in certain regions
-   - **Network issues:** Check your internet connection
-   - **yt-dlp version:** Ensure you have the latest version: `pip install --upgrade yt-dlp`
-
 ## 📚 Documentation
 
 ### Component Development Guidelines
@@ -220,12 +177,6 @@ When creating new components:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Langflow](https://langflow.org/) - The amazing low-code AI platform
-- [DataStax](https://www.datastax.com/) - For Langflow development and support
-- All contributors who help improve this component library
 
 ## 📞 Support
 
