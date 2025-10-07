@@ -12,7 +12,7 @@ import base64
 class CloudRunSchedulerComponent(Component):
     display_name = "Cloud Run Scheduler"
     description = "Creates schedules for Cloud Run services on Google Cloud Platform"
-    icon = "clock"  # Using Lucide icon
+    icon = "clock"  
     name = "CloudRunSchedulerComponent"
     version = "1.0.0"
 
