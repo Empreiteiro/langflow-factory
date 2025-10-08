@@ -4,20 +4,10 @@ from langflow.schema.message import Message
 
 
 class GuardrailComponent(Component):
-    display_name = "Guardrail Validator"
+    display_name = "Guardrails Validator"
     description = "Validates input text against multiple security and safety guardrails using LLM-based detection."
     icon = "shield-check"
     name = "GuardrailValidator"
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._validation_result = None
-        self._failed_checks = []
-
-    def _pre_run_setup(self):
-        """Reset validation state before each run."""
-        self._validation_result = None
-        self._failed_checks = []
 
     inputs = [
         HandleInput(
@@ -88,6 +78,16 @@ class GuardrailComponent(Component):
         Output(display_name="Pass", name="pass_result", method="process_pass", group_outputs=True),
         Output(display_name="Fail", name="failed_result", method="process_fail", group_outputs=True),
     ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._validation_result = None
+        self._failed_checks = []
+
+    def _pre_run_setup(self):
+        """Reset validation state before each run."""
+        self._validation_result = None
+        self._failed_checks = []
 
     def _check_guardrail(self, llm, input_text: str, check_type: str, check_description: str) -> tuple[bool, str]:
         """
