@@ -80,7 +80,7 @@ class WaitComponent(Component):
             self.log(f"Wait component failed: {str(e)}")
             return None
 
-    def get_text_output(self) -> str:
+    def get_text_output(self) -> Message:
         """Wait and return input data as text - no conversion."""
         input_data = self._perform_wait()
         if input_data is None:
