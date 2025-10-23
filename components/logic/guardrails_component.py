@@ -3,7 +3,7 @@ from langflow.io import BoolInput, MessageTextInput, Output, HandleInput, Messag
 from langflow.schema.message import Message
 
 
-class GuardrailComponent(Component):
+class GuardrailsComponent(Component):
     display_name = "Guardrails Validator"
     description = "Validates input text against multiple security and safety guardrails using LLM-based detection."
     icon = "shield-check"
