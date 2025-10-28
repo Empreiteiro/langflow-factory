@@ -112,3 +112,5 @@ flows/langflow_support_agent
 flows/orquestrator
 flows/business_developer
 flows/facebook
+components/agents/claude_sdk/development
+components/agents/claude_sdk/QA

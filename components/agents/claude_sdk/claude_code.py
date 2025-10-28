@@ -1,170 +1,127 @@
 from langflow.custom import Component
-from langflow.io import StrInput, Output, BoolInput
+from langflow.io import StrInput, Output, SecretStrInput
 from langflow.schema import Data
 import subprocess
-import shutil
 import os
+import tempfile
+import platform
 
 
-class ClaudeCodeCLIComponent(Component):
-    display_name = "Claude Code CLI"
+class ClaudeTerminalComponent(Component):
+    display_name = "Claude Terminal"
     description = (
-        "Executes queries to Claude Code via CLI. "
-        "Ideal for simple questions, automations, and plain text responses."
+        "Executes Claude CLI commands in a new terminal to avoid conflicts with Langflow. "
+        "This component opens a separate terminal process, runs the command, and returns the result."
     )
     icon = "bot"
-    name = "ClaudeCodeCLI"
+    name = "ClaudeTerminalComponent"
     beta = True
 
     inputs = [
-        StrInput(
-            name="prompt",
-            display_name="Prompt",
-            info="Input text to be sent to the Claude Code CLI.",
+        SecretStrInput(
+            name="api_key",
+            display_name="Claude API Key",
+            info="Your Claude API key for authentication.",
             required=True,
         ),
         StrInput(
-            name="system_prompt",
-            display_name="System Prompt",
-            info="Optional system prompt to configure the execution context.",
-            required=False,
-        ),
-        StrInput(
-            name="working_directory",
-            display_name="Working Directory",
-            info="Execution path (e.g., /home/user/project).",
-            required=False,
-        ),
-        BoolInput(
-            name="debug",
-            display_name="Debug",
-            info="Enables detailed logs during execution.",
-            value=False,
+            name="prompt",
+            display_name="Prompt",
+            info="The text or instructions to send to Claude.",
+            required=True,
         ),
     ]
 
     outputs = [
-        Output(name="response", display_name="Claude CLI Response", method="run_cli_query"),
+        Output(name="response", display_name="Claude Response", method="run_terminal_query"),
     ]
 
     field_order = [
+        "api_key",
         "prompt",
-        "system_prompt",
-        "working_directory",
-        "debug",
     ]
 
-    def _check_claude_cli(self):
-        """Check if Claude CLI is available and authenticated."""
-        claude_path = shutil.which("claude")
-        if not claude_path:
-            return False, "Claude CLI not found in PATH. Install it first."
-
+    def _execute_in_new_terminal(self, command, env_vars=None):
+        """Execute a command in a new terminal and return the result."""
         try:
-            # Check version
+            # Prepare environment variables
+            env = os.environ.copy()
+            if env_vars:
+                env.update(env_vars)
+            
+            # Determine command based on operating system
+            if platform.system() == "Windows":
+                # Windows: use cmd /c to execute in new process
+                cmd = ["cmd", "/c", command]
+            else:
+                # Linux/Mac: use bash -c
+                cmd = ["bash", "-c", command]
+            
+            # Execute command
             result = subprocess.run(
-                ["claude", "--version"],
+                cmd,
                 capture_output=True,
                 text=True,
-                timeout=5
-            )
-            if result.returncode != 0:
-                return False, f"Claude CLI failed: {result.stderr}"
-
-            version = result.stdout.strip() or "version unknown"
-            return True, f"Claude CLI found: {version}"
-        except subprocess.TimeoutExpired:
-            return False, "Claude CLI check timed out"
-        except Exception as e:
-            return False, f"Error checking Claude CLI: {e}"
-
-    def _execute_claude_query(self, prompt: str) -> str:
-        """Execute Claude query using subprocess with proper input handling."""
-        try:
-            # Build the command
-            cmd = ["claude"]
-
-            # Set working directory if provided
-            cwd = self.working_directory or None
-
-            # Create environment with system prompt if provided
-            env = os.environ.copy()
-            if self.system_prompt:
-                env["CLAUDE_SYSTEM_PROMPT"] = self.system_prompt
-
-            if self.debug:
-                self.log(f"Executing: {' '.join(cmd)}")
-                self.log(f"Working directory: {cwd}")
-                self.log(f"Prompt: {prompt[:100]}...")
-
-            # Execute Claude CLI with prompt via stdin
-            # Using non-interactive mode
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=cwd,
+                timeout=120,  # 2 minutes timeout
                 env=env
             )
-
-            # Send the prompt and get response
-            stdout, stderr = process.communicate(input=prompt, timeout=300)  # 5 min timeout
-
-            if process.returncode != 0:
-                error_msg = stderr.strip() if stderr else "Unknown error"
-                if self.debug:
-                    self.log(f"Claude CLI failed with code {process.returncode}: {error_msg}")
-                return f"Error: {error_msg}"
-
-            if self.debug:
-                self.log(f"Response length: {len(stdout)} chars")
-
-            return stdout.strip() or "No response from Claude."
-
+            
+            return result
+            
         except subprocess.TimeoutExpired:
-            return "Error: Claude CLI query timed out (5 minutes)"
+            return None
         except Exception as e:
-            if self.debug:
-                self.log(f"Exception during execution: {type(e).__name__}: {e}")
-            return f"Error executing Claude CLI: {e}"
+            return None
 
-    def run_cli_query(self) -> Data:
-        """Executes a query to the Claude Code CLI."""
+    def run_terminal_query(self) -> Data:
+        """Executes the prompt using Claude CLI in a new terminal."""
+        
         try:
-            # Check CLI availability first
-            cli_available, cli_status = self._check_claude_cli()
-
-            if self.debug:
-                self.log(f"CLI Status: {cli_status}")
-
-            if not cli_available:
-                error_msg = (
-                    f"Claude CLI not available: {cli_status}\n\n"
-                    "TROUBLESHOOTING:\n"
-                    "1. Install Claude Code CLI: pip install claude-code\n"
-                    "2. Authenticate: run 'claude' in terminal and login\n"
-                    "3. Verify: run 'claude --version'\n"
-                    "4. Ensure claude is in your PATH"
-                )
-                self.status = "CLI not available"
-                return Data(data={"error": error_msg, "text": error_msg})
-
-            # Execute the query
-            result = self._execute_claude_query(self.prompt)
-
-            # Check if result is an error
-            if result.startswith("Error:"):
-                self.status = "CLI execution failed"
-                return Data(data={"error": result, "text": result})
-
-            self.status = "CLI execution completed successfully"
-            return Data(data={"text": result})
-
+            # Prepare CLI command
+            claude_command = f'claude -p "{self.prompt}"'
+            
+            # Execute in new terminal
+            env_vars = {"ANTHROPIC_API_KEY": self.api_key}
+            result = self._execute_in_new_terminal(claude_command, env_vars)
+            
+            if result is None:
+                error_msg = "Command timed out or failed to execute in new terminal"
+                self.status = error_msg
+                return Data(data={"error": error_msg})
+            
+            if result.returncode == 0:
+                # Success
+                response_text = result.stdout.strip()
+                self.status = "Query executed successfully in new terminal."
+                return Data(data={"text": response_text})
+            else:
+                # Error
+                error_msg = f"CLI error in new terminal: {result.stderr}"
+                
+                # Specific error handling
+                if "not authenticated" in result.stderr.lower():
+                    error_msg = (
+                        "Authentication failed in new terminal.\n\n"
+                        "SOLUTION:\n"
+                        "1. Verify your API key is correct\n"
+                        "2. Check API key permissions\n"
+                        "3. Get a new API key from https://console.anthropic.com/\n\n"
+                        f"Error: {result.stderr}"
+                    )
+                elif "not found" in result.stderr.lower() or "command not found" in result.stderr.lower():
+                    error_msg = (
+                        "Claude CLI not found in new terminal.\n\n"
+                        "SOLUTION:\n"
+                        "1. Install: npm install -g @anthropic-ai/claude-agent-sdk\n"
+                        "2. Verify: claude --version\n"
+                        "3. Test: claude -p 'test'\n\n"
+                        f"Error: {result.stderr}"
+                    )
+                
+                self.status = error_msg
+                return Data(data={"error": error_msg})
+                
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
             self.status = error_msg
-            if self.debug:
-                self.log(error_msg)
-            return Data(data={"error": error_msg, "text": error_msg})
+            return Data(data={"error": error_msg})
