@@ -1,7 +1,7 @@
 from typing import Any
 
-from lfx.custom import Component
-from lfx.io import (
+from langflow.custom import Component
+from langflow.io import (
     BoolInput,
     FloatInput,
     HandleInput,
@@ -11,8 +11,8 @@ from lfx.io import (
     StrInput,
     TableInput,
 )
-from lfx.schema.data import Data
-from lfx.schema.message import Message
+from langflow.schema.data import Data
+from langflow.schema.message import Message
 
 
 class CrateData(Component):
@@ -93,6 +93,13 @@ class CrateData(Component):
             name="include_metadata",
             display_name="Include Metadata",
             info="Include form configuration metadata in the output.",
+            value=False,
+            advanced=True,
+        ),
+        BoolInput(
+            name="output_as_array",
+            display_name="Output as Array",
+            info="Transform the output Data into an array format (wrap in []).",
             value=False,
             advanced=True,
         ),
@@ -412,8 +419,14 @@ class CrateData(Component):
 
         self.status = f"Form processed successfully. {connected_fields}/{total_fields} fields connected to components."
 
+        # Check if output should be wrapped in array
+        output_as_array = getattr(self, 'output_as_array', False)
+        
         # Return clean Data object with just the field values
-        return Data(data=dynamic_values)
+        if output_as_array:
+            return Data(data=[dynamic_values])
+        else:
+            return Data(data=dynamic_values)
 
     def get_message(self) -> Message:
         """Return form data as a formatted text message."""
