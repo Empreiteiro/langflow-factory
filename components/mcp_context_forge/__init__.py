@@ -41,6 +41,7 @@ from .get_a2a_agent_details import GetA2AAgentDetailsComponent
 from .invoke_a2a_agent import InvokeA2AAgentComponent
 from .update_a2a_agent import UpdateA2AAgentComponent
 from .delete_a2a_agent import DeleteA2AAgentComponent
+from .mcp_context_forge_all import MCPContextForgeAllComponent
 
 __all__ = [
     "CheckServerHealthComponent", 
@@ -85,5 +86,6 @@ __all__ = [
     "GetA2AAgentDetailsComponent",
     "InvokeA2AAgentComponent",
     "UpdateA2AAgentComponent",
-    "DeleteA2AAgentComponent"
+    "DeleteA2AAgentComponent",
+    "MCPContextForgeAllComponent"
 ]
