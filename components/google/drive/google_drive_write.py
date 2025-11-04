@@ -1,6 +1,6 @@
-from lfx.custom import Component
-from lfx.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput, SecretStrInput
-from lfx.schema import Data, DataFrame, Message
+from langflow.custom import Component
+from langflow.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, HandleInput, SecretStrInput, TabInput
+from langflow.schema import Data, DataFrame, Message
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2 import service_account
@@ -16,15 +16,33 @@ class GoogleDriveUploader(Component):
     icon = "Google"
     name = "GoogleDriveUploader"
 
-    FILE_TYPE_CHOICES = ["txt", "json", "csv", "xlsx", "slides", "docs", "jpg", "mp3"]
+    FILE_TYPE_CHOICES = ["txt", "json", "csv", "xlsx", "slides", "docs", "jpg", "mp3", "pdf"]
 
     inputs = [
+        TabInput(
+            name="auth_type",
+            display_name="Authentication Type",
+            options=["secret", "file"],
+            value="secret",
+            info="Select the authentication method for Google Cloud Platform credentials. 'secret' for Secret String, 'file' for JSON File.",
+            real_time_refresh=True,
+        ),
         SecretStrInput(
             name="service_account_key",
             display_name="GCP Credentials Secret Key",
             info="Your Google Cloud Platform service account JSON key as a secret string (complete JSON content).",
             required=True,
             advanced=True,
+            show=True,
+        ),
+        FileInput(
+            name="service_account_json",
+            display_name="GCP Credentials JSON File",
+            file_types=["json"],
+            info="Upload your Google Cloud Platform service account JSON key.",
+            required=True,
+            advanced=True,
+            show=False,
         ),
         HandleInput(
             name="input",
@@ -61,6 +79,34 @@ class GoogleDriveUploader(Component):
     outputs = [
         Output(name="file_url", display_name="File URL", method="upload_file"),
     ]
+
+    def update_build_config(self, build_config, field_value, field_name=None):
+        """Update build configuration to show/hide fields based on authentication type selection."""
+        if field_name != "auth_type":
+            return build_config
+
+        # Extract selected authentication type from TabInput (should be a string)
+        auth_type = str(field_value) if field_value else "secret"
+
+        # Normalize auth_type value
+        if auth_type not in ["secret", "file"]:
+            auth_type = "secret"  # Default to secret
+
+        # Hide both authentication fields first
+        if "service_account_key" in build_config:
+            build_config["service_account_key"]["show"] = False
+        if "service_account_json" in build_config:
+            build_config["service_account_json"]["show"] = False
+
+        # Show the appropriate field based on selection
+        if auth_type == "secret":
+            if "service_account_key" in build_config:
+                build_config["service_account_key"]["show"] = True
+        elif auth_type == "file":
+            if "service_account_json" in build_config:
+                build_config["service_account_json"]["show"] = True
+
+        return build_config
 
     def _sanitize_filename(self, filename):
         """Sanitize filename to ensure it's valid and has minimum length"""
@@ -152,12 +198,12 @@ class GoogleDriveUploader(Component):
 
     def _determine_file_type_from_content(self, content, file_type):
         """Determine the best file type based on content and user selection"""
-        if file_type in ["slides", "docs", "jpg", "mp3"]:
+        if file_type in ["slides", "docs", "jpg", "mp3", "pdf"]:
             return file_type
         
         # Auto-detect based on input type if user selected csv/xlsx/json
         if isinstance(self.input, DataFrame):
-            if file_type in ["csv", "xlsx"]:
+            if file_type in ["csv", "xlsx", "pdf"]:
                 return file_type
             return "csv"  # Default for DataFrame
         
@@ -176,7 +222,7 @@ class GoogleDriveUploader(Component):
         
         # For Message inputs, default to txt unless specifically requested
         if isinstance(self.input, Message):
-            if file_type in ["txt", "json", "csv"]:
+            if file_type in ["txt", "json", "csv", "pdf"]:
                 return file_type
             return "txt"
         
@@ -197,11 +243,35 @@ class GoogleDriveUploader(Component):
             # Determine the actual file type to use
             actual_file_type = self._determine_file_type_from_content(file_content, self.file_type)
             
-            # Parse the JSON credentials from the secret key string
-            try:
-                credentials_dict = json.loads(self.service_account_key)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in service account key: {str(e)}")
+            # Parse credentials based on authentication type
+            auth_type = getattr(self, "auth_type", "secret")
+            
+            # Extract auth_type value from TabInput (should be a string)
+            auth_type = str(auth_type) if auth_type else "secret"
+            
+            # Normalize to "secret" or "file"
+            if auth_type not in ["secret", "file"]:
+                auth_type = "secret"  # Default to secret
+            
+            if auth_type == "file":
+                # Load credentials from JSON file
+                if not hasattr(self, "service_account_json") or not self.service_account_json:
+                    raise ValueError("Service account JSON file is required when using file authentication.")
+                try:
+                    with open(self.service_account_json, "r", encoding="utf-8") as f:
+                        credentials_dict = json.load(f)
+                except FileNotFoundError:
+                    raise ValueError(f"Service account JSON file not found: {self.service_account_json}")
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in service account file: {str(e)}")
+            else:
+                # Parse the JSON credentials from the secret key string (default)
+                if not hasattr(self, "service_account_key") or not self.service_account_key:
+                    raise ValueError("Service account key is required when using secret string authentication.")
+                try:
+                    credentials_dict = json.loads(self.service_account_key)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in service account key: {str(e)}")
 
             credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict,
@@ -385,6 +455,17 @@ class GoogleDriveUploader(Component):
                     file_data = file_content
                 else:
                     raise ValueError("Audio data must be passed as base64 string or bytes.")
+            elif actual_file_type == "pdf":
+                file_path += ".pdf"
+                mime_type = "application/pdf"
+                # Generate PDF using reportlab
+                temp_pdf_path = file_path + "_temp"
+                self._create_pdf_from_content(file_content, temp_pdf_path)
+                
+                with open(temp_pdf_path, 'rb') as f:
+                    file_data = f.read()
+                
+                os.remove(temp_pdf_path)
             else:
                 # Default to txt for unsupported types
                 file_path += ".txt"
@@ -407,3 +488,86 @@ class GoogleDriveUploader(Component):
         except Exception as e:
             self.log(f"Error uploading file: {e}")
             return Data(data={"error": str(e)})
+
+    def _create_pdf_from_content(self, content: str, pdf_path: str) -> None:
+        """Create a PDF file from content using reportlab."""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+            from reportlab.lib.styles import getSampleStyleSheet
+        except ImportError as e:
+            raise ImportError("reportlab is not installed. Please install it using `uv pip install reportlab`.") from e
+
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        elements = []
+        styles = getSampleStyleSheet()
+
+        # Try to create a table if input is DataFrame
+        if isinstance(self.input, DataFrame):
+            self._create_dataframe_pdf(self.input, elements)
+        # Try to create a table if input is Data with tabular data
+        elif isinstance(self.input, Data):
+            try:
+                import pandas as pd
+                df = pd.DataFrame(self.input.data) if hasattr(self.input, "data") and self.input.data else None
+                if df is not None and not df.empty:
+                    self._create_dataframe_pdf(df, elements)
+                else:
+                    # Save as formatted text
+                    self._create_text_pdf(content, elements, styles)
+            except Exception:
+                # Save as formatted text if conversion fails
+                self._create_text_pdf(content, elements, styles)
+        else:
+            # Save as formatted text for Message or other types
+            self._create_text_pdf(content, elements, styles)
+
+        doc.build(elements)
+
+    def _create_dataframe_pdf(self, dataframe, elements):
+        """Create a PDF table from a DataFrame."""
+        from reportlab.lib import colors
+        from reportlab.platypus import Table, TableStyle
+
+        # Convert DataFrame to list of lists for table
+        if hasattr(dataframe, 'columns') and hasattr(dataframe, 'values'):
+            data = [dataframe.columns.tolist()] + dataframe.values.tolist()
+        else:
+            # Try to convert to pandas DataFrame
+            import pandas as pd
+            if isinstance(dataframe, pd.DataFrame):
+                data = [dataframe.columns.tolist()] + dataframe.values.tolist()
+            else:
+                raise ValueError("Cannot convert input to DataFrame for PDF table")
+
+        # Create table
+        table = Table(data)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                    ("FONTSIZE", (0, 1), (-1, -1), 10),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                ]
+            )
+        )
+
+        elements.append(table)
+
+    def _create_text_pdf(self, content: str, elements, styles):
+        """Create a PDF with formatted text content."""
+        from reportlab.platypus import Paragraph
+
+        # Use the content passed as parameter (already extracted from input)
+        # Escape HTML and convert newlines
+        text_escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+        para = Paragraph(text_escaped, styles["Normal"])
+        elements.append(para)
