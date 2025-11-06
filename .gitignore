@@ -93,7 +93,6 @@ logs/
 
 # Database
 *.db
-*.sqlite
 *.sqlite3
 
 # Custom folders
