@@ -3,10 +3,10 @@ import json
 
 from langchain_experimental.utilities import PythonREPL
 
-from lfx.custom.custom_component.component import Component
-from lfx.io import MessageInput, Output, StrInput
-from lfx.schema.data import Data
-from lfx.schema.message import Message
+from langflow.custom.custom_component.component import Component
+from langflow.io import MessageInput, Output, StrInput
+from langflow.schema.data import Data
+from langflow.schema.message import Message
 
 
 class PythonREPLComponent(Component):
