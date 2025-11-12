@@ -12,7 +12,7 @@ from langflow.io import BoolInput, IntInput, SecretStrInput, StrInput, TabInput
 from langflow.schema.dotdict import dotdict
 
 
-class WatsonxEmbeddingsComponent(LCEmbeddingsModel):
+class WatsonxEmbeddingsComponentCPD(LCEmbeddingsModel):
     display_name = "IBM watsonx.ai / CPD Embeddings"
     description = "Generate embeddings using IBM watsonx.ai SaaS or On-Prem (Cloud Pak for Data)."
     icon = "WatsonxAI"
