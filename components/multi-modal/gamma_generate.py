@@ -16,7 +16,7 @@ import json
 class GammaGenerateComponent(Component):
     display_name = "Gamma Generate"
     description = "Generates content using the Gamma API /v1/generate."
-    icon = "mdi-creation"
+    icon = "custom"
     name = "GammaGenerateComponent"
     beta = False
 
