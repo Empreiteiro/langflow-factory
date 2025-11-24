@@ -1,6 +1,10 @@
 import time
 import requests
+import urllib3
 from lfx.custom import Component
+
+# Disable SSL warnings when verify=False is used
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from lfx.inputs import MessageTextInput, DropdownInput, MultilineInput
 from lfx.template import Output
 from lfx.schema import Data
@@ -44,6 +48,7 @@ class SendMessageThenDocument(Component):
             "Client-Token": client_token,
         }
 
+        timeout = 30
         try:
             # Send message
             message_url = f"https://api.z-api.io/instances/{instance}/token/{token}/send-text"
@@ -51,7 +56,7 @@ class SendMessageThenDocument(Component):
                 "phone": phone,
                 "message": message
             }
-            message_response = requests.post(message_url, json=message_payload, headers=headers)
+            message_response = requests.post(message_url, json=message_payload, headers=headers, verify=False, timeout=timeout)
             message_response.raise_for_status()
             message_result = message_response.json()
             self.log(f"Message sent: {message_result}")
@@ -71,17 +76,29 @@ class SendMessageThenDocument(Component):
                 "document": document,
                 "fileName": fileName
             }
-            doc_response = requests.post(doc_url, json=doc_payload, headers=headers)
+            doc_response = requests.post(doc_url, json=doc_payload, headers=headers, verify=False, timeout=timeout)
             doc_response.raise_for_status()
             doc_result = doc_response.json()
             self.log(f"Document sent: {doc_result}")
 
             return Data(data={"message_response": message_result, "document_response": doc_result})
 
+        except requests.exceptions.ConnectionError as e:
+            error_str = str(e)
+            if "Failed to resolve" in error_str or "NameResolutionError" in error_str:
+                error_msg = "DNS resolution failed: Cannot resolve hostname 'api.z-api.io'. Please check your internet connection and DNS settings."
+            else:
+                error_msg = f"Connection error: {error_str}"
+            self.log(error_msg)
+            return Data(data={"error": error_msg, "error_type": "connection_error"})
+        except requests.exceptions.Timeout:
+            error_msg = "Request timeout: The request took longer than 30 seconds to complete."
+            self.log(error_msg)
+            return Data(data={"error": error_msg, "error_type": "timeout"})
         except requests.exceptions.RequestException as e:
             error_msg = f"Request error: {str(e)}"
             self.log(error_msg)
-            return Data(data={"error": error_msg})
+            return Data(data={"error": error_msg, "error_type": "request_error"})
         except Exception as e:
             self.log(f"Unexpected error: {e}")
-            return Data(data={"error": str(e)})
+            return Data(data={"error": str(e), "error_type": "unexpected_error"})

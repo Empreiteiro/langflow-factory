@@ -1,4 +1,6 @@
 import requests
+import urllib3
+import re
 from lfx.custom import Component
 from lfx.inputs import MessageTextInput, DropdownInput, SortableListInput, MultilineInput, MessageInput
 from lfx.io import SecretStrInput, IntInput
@@ -6,6 +8,9 @@ from lfx.template import Output
 from lfx.schema import Data
 from lfx.schema.dataframe import DataFrame
 import pandas as pd
+
+# Disable SSL warnings when verify=False is used
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class APIRequestComponent(Component):
     display_name = "Z-API Request"
@@ -77,6 +82,29 @@ class APIRequestComponent(Component):
             display_name="Message",
             info="Text message to be sent (if type is text).",
             show=False
+        ),
+        IntInput(
+            name="delayMessage",
+            display_name="Delay Message (seconds)",
+            info="Delay before sending next message (1-15 seconds). Default: 1-3 seconds.",
+            value=1,
+            dynamic=True,
+            show=False,
+        ),
+        IntInput(
+            name="delayTyping",
+            display_name="Delay Typing (seconds)",
+            info="Delay for 'Typing...' status (1-15 seconds). Default: 0 seconds.",
+            value=0,
+            dynamic=True,
+            show=False,
+        ),
+        MessageTextInput(
+            name="editMessageId",
+            display_name="Edit Message ID",
+            info="Message ID to edit (requires webhook configuration).",
+            dynamic=True,
+            show=False,
         ),
         MessageTextInput(
             name="audio",
@@ -155,7 +183,7 @@ class APIRequestComponent(Component):
         ),
     ]
 
-    field_order = ["trigger", "zapi_instance", "zapi_token", "zapi_client_token", "type", "phone", "message", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
+    field_order = ["trigger", "zapi_instance", "zapi_token", "zapi_client_token", "type", "phone", "message", "delayMessage", "delayTyping", "editMessageId", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]
 
     outputs = [
         Output(display_name="API Response", name="api_response", method="send_request"),
@@ -170,7 +198,7 @@ class APIRequestComponent(Component):
         selected = [action["name"] for action in field_value] if isinstance(field_value, list) else []
 
         field_map = {
-            "Text": ["phone", "message"],
+            "Text": ["phone", "message", "delayMessage", "delayTyping", "editMessageId"],
             "Audio": ["phone", "audio"],
             "Image": ["phone", "image", "image_caption"],
             "Video": ["phone", "video", "caption"],
@@ -180,7 +208,7 @@ class APIRequestComponent(Component):
         }
 
         # Hide all dynamic fields first
-        for field_name in ["phone", "message", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]:
+        for field_name in ["phone", "message", "delayMessage", "delayTyping", "editMessageId", "audio", "image", "image_caption", "video", "caption", "document", "fileName", "extension", "buttonList", "page", "pageSize"]:
             if field_name in build_config:
                 build_config[field_name]["show"] = False
 
@@ -320,39 +348,172 @@ class APIRequestComponent(Component):
             self.log(f"Get Groups - Final Page: {page}, PageSize: {page_size}")
         else:
             url = f"https://api.z-api.io/instances/{instance}/token/{token}/send-text"
+            
+            # Validate required fields
+            if not phone:
+                raise ValueError("Phone number is required for sending text message")
+            if not self.message:
+                raise ValueError("Message text is required for sending text message")
+            
+            # Clean phone number - remove any non-numeric characters as per Z-API docs
+            phone_clean = ''.join(filter(str.isdigit, str(phone)))
+            if not phone_clean:
+                raise ValueError("Phone number must contain at least one digit")
+            
             payload = {
-                "phone": phone,
-                "message": self.message
+                "phone": phone_clean,
+                "message": str(self.message).strip()
             }
+            
+            # Validate message is not empty after stripping
+            if not payload["message"]:
+                raise ValueError("Message cannot be empty")
+            
+            # Add optional fields if provided
+            delay_message = getattr(self, 'delayMessage', None)
+            if delay_message is not None and delay_message != "":
+                try:
+                    delay_message = int(delay_message)
+                    if 1 <= delay_message <= 15:
+                        payload["delayMessage"] = delay_message
+                except (ValueError, TypeError):
+                    pass
+            
+            delay_typing = getattr(self, 'delayTyping', None)
+            if delay_typing is not None and delay_typing != "":
+                try:
+                    delay_typing = int(delay_typing)
+                    if 1 <= delay_typing <= 15:
+                        payload["delayTyping"] = delay_typing
+                except (ValueError, TypeError):
+                    pass
+            
+            edit_message_id = getattr(self, 'editMessageId', None)
+            if edit_message_id and edit_message_id.strip():
+                payload["editMessageId"] = edit_message_id.strip()
 
         try:
+            # Set timeout to avoid hanging requests (30 seconds)
+            timeout = 30
+            
+            # Log request details for debugging
+            self.log(f"Request URL: {url}")
+            self.log(f"Request payload: {payload}")
+            self.log(f"Request headers: {{'Content-Type': 'application/json', 'Client-Token': '***'}}")
+            
             if message_type == "Get Groups":
                 # Para GET requests, os parâmetros devem ser passados como query parameters
-                response = requests.get(url, params=payload, headers=headers)
+                response = requests.get(url, params=payload, headers=headers, verify=False, timeout=timeout)
                 self.log(f"Get Groups - Response Status: {response.status_code}")
                 self.log(f"Get Groups - Response URL: {response.url}")
                 self.log(f"Get Groups - Full URL with params: {response.url}")
             else:
-                response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            result = response.json()
-            if message_type == "Get Groups":
-                self.log(f"Get Groups - Response Data: {result}")
-                # Verificar se há dados na resposta
-                if isinstance(result, dict):
-                    groups = result.get('groups', [])
-                    total = result.get('total', 0)
-                    self.log(f"Get Groups - Total groups: {total}, Groups in response: {len(groups) if isinstance(groups, list) else 'N/A'}")
-        except requests.exceptions.RequestException as e:
-            error_msg = f"Error while sending request: {str(e)}"
+                response = requests.post(url, json=payload, headers=headers, verify=False, timeout=timeout)
+                self.log(f"Response Status: {response.status_code}")
+            
+            # Check for HTTP errors before raise_for_status
+            if response.status_code >= 400:
+                try:
+                    error_response = response.json()
+                    self.log(f"Error Response: {error_response}")
+                except:
+                    error_response = response.text
+                    self.log(f"Error Response (text): {error_response}")
+                
+                # Provide specific error messages based on status code
+                if response.status_code == 500:
+                    error_msg = f"Server error (500): The Z-API server encountered an internal error. This may indicate: invalid payload format, missing required fields, or server-side issues. Payload sent: {payload}. Response: {error_response if isinstance(error_response, str) else error_response}"
+                elif response.status_code == 400:
+                    error_msg = f"Bad request (400): Invalid request parameters. Response: {error_response if isinstance(error_response, str) else error_response}"
+                elif response.status_code == 401:
+                    error_msg = f"Unauthorized (401): Invalid authentication token or client token. Response: {error_response if isinstance(error_response, str) else error_response}"
+                elif response.status_code == 404:
+                    error_msg = f"Not found (404): Instance or endpoint not found. Check instance ID and token. Response: {error_response if isinstance(error_response, str) else error_response}"
+                else:
+                    error_msg = f"HTTP {response.status_code} error: {error_response if isinstance(error_response, str) else error_response}"
+                
+                result = {
+                    "error": error_msg,
+                    "error_type": f"http_{response.status_code}",
+                    "status_code": response.status_code,
+                    "payload_sent": payload,
+                    "api_response": error_response,
+                }
+            else:
+                response.raise_for_status()
+                result = response.json()
+                if message_type == "Get Groups":
+                    self.log(f"Get Groups - Response Data: {result}")
+                    # Verificar se há dados na resposta
+                    if isinstance(result, dict):
+                        groups = result.get('groups', [])
+                        total = result.get('total', 0)
+                        self.log(f"Get Groups - Total groups: {total}, Groups in response: {len(groups) if isinstance(groups, list) else 'N/A'}")
+        except requests.exceptions.ConnectionError as e:
+            error_str = str(e)
+            if "Failed to resolve" in error_str or "NameResolutionError" in error_str:
+                error_msg = f"DNS resolution failed: Cannot resolve hostname 'api.z-api.io'. Please check your internet connection and DNS settings."
+            else:
+                error_msg = f"Connection error: {error_str}"
             self.log(error_msg)
             result = {
                 "error": error_msg,
+                "error_type": "connection_error",
                 "input": {
                     "url": url,
                     "instance": instance,
                     "token": token,
-                    "client_token": client_token,
+                    "client_token": client_token[:10] + "..." if client_token else None,
+                    "phone": phone,
+                    "message_type": message_type or "unknown",
+                },
+            }
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Request timeout: The request took longer than 30 seconds to complete."
+            self.log(error_msg)
+            result = {
+                "error": error_msg,
+                "error_type": "timeout",
+                "input": {
+                    "url": url,
+                    "message_type": message_type or "unknown",
+                },
+            }
+        except requests.exceptions.SSLError as e:
+            error_msg = f"SSL error: {str(e)}"
+            self.log(error_msg)
+            result = {
+                "error": error_msg,
+                "error_type": "ssl_error",
+                "input": {
+                    "url": url,
+                    "message_type": message_type or "unknown",
+                },
+            }
+        except ValueError as e:
+            error_msg = f"Validation error: {str(e)}"
+            self.log(error_msg)
+            result = {
+                "error": error_msg,
+                "error_type": "validation_error",
+                "input": {
+                    "url": url,
+                    "phone": phone,
+                    "message_type": message_type or "unknown",
+                    "message": getattr(self, 'message', None),
+                },
+            }
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request error: {str(e)}"
+            self.log(error_msg)
+            result = {
+                "error": error_msg,
+                "error_type": "request_error",
+                "input": {
+                    "url": url,
+                    "instance": instance,
+                    "token": token,
+                    "client_token": client_token[:10] + "..." if client_token else None,
                     "phone": phone,
                     "message_type": message_type or "unknown",
                     "message": getattr(self, 'message', None),
