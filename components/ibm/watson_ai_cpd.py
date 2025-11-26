@@ -6,11 +6,11 @@ from langchain_ibm import ChatWatsonx
 from loguru import logger
 from pydantic.v1 import SecretStr
 
-from langflow.base.models.model import LCModelComponent
-from langflow.field_typing import LanguageModel
-from langflow.field_typing.range_spec import RangeSpec
-from langflow.inputs.inputs import BoolInput, IntInput, SecretStrInput, SliderInput, StrInput, TabInput
-from langflow.schema.dotdict import dotdict
+from lfx.base.models.model import LCModelComponent
+from lfx.field_typing import LanguageModel
+from lfx.field_typing.range_spec import RangeSpec
+from lfx.inputs.inputs import BoolInput, IntInput, SecretStrInput, SliderInput, StrInput, TabInput
+from lfx.schema.dotdict import dotdict
 
 
 class WatsonxAIComponentCPD(LCModelComponent):
@@ -151,8 +151,8 @@ class WatsonxAIComponentCPD(LCModelComponent):
         ),
     ]
 
-    @staticmethod
-    def fetch_models(base_url: str) -> list[str]:
+    @classmethod
+    def fetch_models(cls, base_url: str) -> list[str]:
         """Fetch available SaaS models."""
         try:
             endpoint = f"{base_url}/ml/v1/foundation_model_specs"
@@ -162,11 +162,11 @@ class WatsonxAIComponentCPD(LCModelComponent):
             data = response.json()
             models = [model["model_id"] for model in data.get("resources", [])]
             return sorted(models)
-        except Exception:
+        except (requests.RequestException, KeyError, ValueError) as e:
             logger.exception("Error fetching SaaS models. Using defaults.")
-            return WatsonxAIComponent._default_models
+            return cls._default_models
 
-    def update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
+    def update_build_config(self, build_config: dotdict, _field_value: Any, field_name: str | None = None):
         """Update model dropdown based on environment."""
         deployment = build_config.deployment_type.value
 
@@ -192,7 +192,7 @@ class WatsonxAIComponentCPD(LCModelComponent):
                     build_config.model_name.options = models
                     build_config.model_name.value = models[0] if models else None
                     logger.info(f"Loaded {len(models)} SaaS models.")
-                except Exception:
+                except (requests.RequestException, KeyError, ValueError) as e:
                     logger.exception("Error loading SaaS model list.")
             else:
                 build_config.model_name.options = self._default_models

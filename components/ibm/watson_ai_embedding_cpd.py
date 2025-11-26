@@ -6,10 +6,10 @@ from langchain_ibm import WatsonxEmbeddings
 from loguru import logger
 from pydantic.v1 import SecretStr
 
-from langflow.base.embeddings.model import LCEmbeddingsModel
-from langflow.field_typing import Embeddings
-from langflow.io import BoolInput, IntInput, SecretStrInput, StrInput, TabInput
-from langflow.schema.dotdict import dotdict
+from lfx.base.embeddings.model import LCEmbeddingsModel
+from lfx.field_typing import Embeddings
+from lfx.io import BoolInput, IntInput, SecretStrInput, StrInput, TabInput
+from lfx.schema.dotdict import dotdict
 
 
 class WatsonxEmbeddingsComponentCPD(LCEmbeddingsModel):
@@ -87,8 +87,8 @@ class WatsonxEmbeddingsComponentCPD(LCEmbeddingsModel):
         ),
     ]
 
-    @staticmethod
-    def fetch_models(base_url: str) -> list[str]:
+    @classmethod
+    def fetch_models(cls, base_url: str) -> list[str]:
         """Fetch available models (SaaS only)."""
         try:
             endpoint = f"{base_url}/ml/v1/foundation_model_specs"
@@ -98,11 +98,11 @@ class WatsonxEmbeddingsComponentCPD(LCEmbeddingsModel):
             data = response.json()
             models = [model["model_id"] for model in data.get("resources", [])]
             return sorted(models)
-        except Exception:
+        except (requests.RequestException, KeyError, ValueError) as e:
             logger.exception("Could not fetch models from SaaS API.")
-            return WatsonxEmbeddingsComponent._default_models
+            return cls._default_models
 
-    def update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
+    def update_build_config(self, build_config: dotdict, _field_value: Any, field_name: str | None = None):
         """Update model dropdown when connection type changes."""
         deployment = build_config.deployment_type.value
 
@@ -128,7 +128,7 @@ class WatsonxEmbeddingsComponentCPD(LCEmbeddingsModel):
                     build_config.model_name.options = models
                     build_config.model_name.value = models[0] if models else None
                     logger.info(f"Loaded {len(models)} models from SaaS.")
-                except Exception:
+                except (requests.RequestException, KeyError, ValueError) as e:
                     logger.exception("Error loading SaaS models.")
             else:
                 # On-Prem fallback – static model list
