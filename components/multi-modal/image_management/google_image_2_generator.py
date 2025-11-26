@@ -1,12 +1,12 @@
 from langflow.custom import Component
-from langflow.io import StrInput, SecretStrInput, IntInput, FloatInput, BoolInput, Output
+from langflow.io import StrInput, MessageInput, SecretStrInput, IntInput, FloatInput, BoolInput, DropdownInput, Output
 from langflow.schema import Data
 import requests
 
 
 class GoogleImagen2Component(Component):
     display_name = "Google Imagen 2"
-    description = "Generate images using Google Vertex AI Imagen 2 (Model Garden)."
+    description = "Generate images using Google Vertex AI Gemini 2.5 Flash Image Preview models."
     icon = "GoogleGenerativeAI"
     name = "GoogleImagen2Component"
     beta = True
@@ -36,12 +36,18 @@ class GoogleImagen2Component(Component):
             display_name="Location",
             info="The region (like 'us-central1') where the model is deployed.",
             value="us-central1",
+            advanced=True,
         ),
-        StrInput(
+        DropdownInput(
             name="model_name",
             display_name="Model Name",
-            info="The Imagen 2 model name (e.g., 'imagen-2').",
-            value="imagen-2",
+            info="Select the Gemini image generation model to use.",
+            options=[
+                "gemini-3-pro-image-preview",
+                "gemini-2.5-flash-image-preview",
+                "gemini-2.0-flash-image-preview",
+            ],
+            value="gemini-2.5-flash-image-preview",
         ),
         IntInput(
             name="image_count",
@@ -60,6 +66,7 @@ class GoogleImagen2Component(Component):
             display_name="Enable Safety Filter",
             info="Enable safety filter for generated images.",
             value=True,
+            advanced=True,
         ),
     ]
 
