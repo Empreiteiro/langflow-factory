@@ -64,8 +64,6 @@ class QdrantVectorStoreComponent(LCVectorStoreComponent):
             "metadata_payload_key": self.metadata_payload_key,
         }
 
-        # Prepare server connection parameters
-        # For localhost, always use host/port to avoid SSL issues
         from qdrant_client import QdrantClient
         
         # If URL is provided, extract host/port for localhost to avoid SSL issues

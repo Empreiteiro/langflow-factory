@@ -9,6 +9,7 @@ import base64
 import json
 import time
 import re
+import tempfile
 
 class GoogleDriveUploader(Component):
     display_name = "Google Drive Uploader"
@@ -374,22 +375,24 @@ class GoogleDriveUploader(Component):
                 return Data(data={"file_url": file_url})
 
             # Handle other file types
-            file_path = sanitized_filename
+            # Use tempfile to avoid file locking issues on Windows
+            file_extension = ""
             mime_type = ""
+            file_data = None
 
             if actual_file_type == "jpg":
-                file_path += ".jpg"
+                file_extension = ".jpg"
                 mime_type = "image/jpeg"
                 try:
                     file_data = base64.b64decode(file_content)
                 except Exception as e:
                     raise ValueError(f"Invalid base64 data for JPG: {str(e)}")
             elif actual_file_type == "txt":
-                file_path += ".txt"
+                file_extension = ".txt"
                 mime_type = "text/plain"
                 file_data = file_content.encode("utf-8")
             elif actual_file_type == "json":
-                file_path += ".json"
+                file_extension = ".json"
                 mime_type = "application/json"
                 # Try to parse and format JSON, fallback to original content
                 try:
@@ -400,11 +403,11 @@ class GoogleDriveUploader(Component):
                     # If not valid JSON, save as-is
                     file_data = file_content.encode("utf-8")
             elif actual_file_type == "csv":
-                file_path += ".csv"
+                file_extension = ".csv"
                 mime_type = "text/csv"
                 file_data = file_content.encode("utf-8")
             elif actual_file_type == "xlsx":
-                file_path += ".xlsx"
+                file_extension = ".xlsx"
                 mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 # For XLSX, we need to convert the content to Excel format
                 try:
@@ -422,9 +425,10 @@ class GoogleDriveUploader(Component):
                             # Create a simple DataFrame with the content
                             df = pd.DataFrame({'content': [file_content]})
                     
-                    # Save as Excel
-                    temp_excel_path = file_path + "_temp"
-                    df.to_excel(temp_excel_path, index=False)
+                    # Save as Excel to temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_excel:
+                        temp_excel_path = temp_excel.name
+                        df.to_excel(temp_excel_path, index=False)
                     
                     with open(temp_excel_path, 'rb') as f:
                         file_data = f.read()
@@ -434,16 +438,16 @@ class GoogleDriveUploader(Component):
                 except ImportError:
                     # If pandas not available, fallback to CSV
                     self.log("pandas not available, saving as CSV instead of XLSX")
-                    file_path = sanitized_filename + ".csv"
+                    file_extension = ".csv"
                     mime_type = "text/csv"
                     file_data = file_content.encode("utf-8")
                 except Exception as e:
                     self.log(f"Error creating XLSX: {str(e)}, falling back to CSV")
-                    file_path = sanitized_filename + ".csv"
+                    file_extension = ".csv"
                     mime_type = "text/csv"
                     file_data = file_content.encode("utf-8")
             elif actual_file_type == "mp3":
-                file_path += ".mp3"
+                file_extension = ".mp3"
                 mime_type = "audio/mpeg"
                 if isinstance(file_content, str):
                     # Se for string, assume que é base64
@@ -456,11 +460,12 @@ class GoogleDriveUploader(Component):
                 else:
                     raise ValueError("Audio data must be passed as base64 string or bytes.")
             elif actual_file_type == "pdf":
-                file_path += ".pdf"
+                file_extension = ".pdf"
                 mime_type = "application/pdf"
-                # Generate PDF using reportlab
-                temp_pdf_path = file_path + "_temp"
-                self._create_pdf_from_content(file_content, temp_pdf_path)
+                # Generate PDF using reportlab to temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+                    temp_pdf_path = temp_pdf.name
+                    self._create_pdf_from_content(file_content, temp_pdf_path)
                 
                 with open(temp_pdf_path, 'rb') as f:
                     file_data = f.read()
@@ -468,21 +473,44 @@ class GoogleDriveUploader(Component):
                 os.remove(temp_pdf_path)
             else:
                 # Default to txt for unsupported types
-                file_path += ".txt"
+                file_extension = ".txt"
                 mime_type = "text/plain"
                 file_data = file_content.encode("utf-8")
 
-            with open(file_path, "wb") as file:
-                file.write(file_data)
+            # Create temporary file with proper name for upload
+            # Use NamedTemporaryFile with delete=False so we can control when to delete
+            # The file is automatically closed when exiting the 'with' block
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+                file_path = temp_file.name
+                temp_file.write(file_data)
+                # File is closed here when exiting 'with' block
 
-            file_metadata = {"name": os.path.basename(file_path), "parents": [extracted_folder_id]}
-            media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
+            try:
+                file_metadata = {"name": sanitized_filename + file_extension, "parents": [extracted_folder_id]}
+                media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
 
-            uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-            file_id = uploaded_file.get("id")
-            file_url = f"https://drive.google.com/file/d/{file_id}/view"
+                uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+                file_id = uploaded_file.get("id")
+                file_url = f"https://drive.google.com/file/d/{file_id}/view"
+            finally:
+                # Ensure file is deleted even if upload fails
+                # Wait a bit to ensure MediaFileUpload releases the file handle
+                try:
+                    time.sleep(0.1)  # Small delay to ensure file handle is released
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except PermissionError:
+                    # On Windows, sometimes the file is still locked
+                    # Try again after a short delay
+                    time.sleep(0.5)
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception as e:
+                        self.log(f"Warning: Could not remove temporary file {file_path}: {e}")
+                except Exception as e:
+                    self.log(f"Warning: Could not remove temporary file {file_path}: {e}")
 
-            os.remove(file_path)
             return Data(data={"file_url": file_url})
 
         except Exception as e:
