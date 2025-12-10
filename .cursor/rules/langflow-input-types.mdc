@@ -1,0 +1,1039 @@
+# Langflow Input Types Documentation
+
+This document provides a comprehensive guide to all input types available in Langflow. Each input type is designed for specific use cases and data formats.
+
+## Table of Contents
+
+1. [Text Inputs](#text-inputs)
+2. [Numeric Inputs](#numeric-inputs)
+3. [Boolean Inputs](#boolean-inputs)
+4. [Selection Inputs](#selection-inputs)
+5. [Data Structure Inputs](#data-structure-inputs)
+6. [File and Code Inputs](#file-and-code-inputs)
+7. [Specialized Inputs](#specialized-inputs)
+8. [Handle/Connector Inputs](#handleconnector-inputs)
+
+---
+
+## Text Inputs
+
+### StrInput
+
+**Field Type:** `"str"`
+
+A basic text input field for single-line text entry.
+
+**Key Features:**
+- Supports single string or list of strings
+- Can load values from database (`load_from_db`)
+- Validates string type
+- Supports metadata tracing
+
+**Common Fields:**
+- `name` (required): Field name
+- `value` (default: `""`): Text value
+- `placeholder`: Placeholder text
+- `required`: Whether field is required
+- `load_from_db`: Enable database loading
+- `is_list`: Support list of strings
+
+**Example:**
+```python
+StrInput(
+    name="username",
+    display_name="Username",
+    placeholder="Enter your username",
+    required=True
+)
+```
+
+---
+
+### MessageInput
+
+**Field Type:** `"str"`  
+**Input Types:** `["Message"]`
+
+A text input specifically designed for message objects. Accepts Message objects, strings, or async iterators.
+
+**Key Features:**
+- Converts strings/iterators to Message objects
+- Handles Message objects from different modules
+- Supports input tracing
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Message object, string, or iterator
+- `input_types`: `["Message"]` (automatic)
+
+**Example:**
+```python
+MessageInput(
+    name="user_message",
+    display_name="User Message",
+    value="Hello, world!"
+)
+```
+
+---
+
+### MessageTextInput
+
+**Field Type:** `"str"`  
+**Input Types:** `["Message"]`
+
+A text input for messages with enhanced tracking capabilities.
+
+**Key Features:**
+- Extracts text from Message objects
+- Supports Data objects with text_key
+- Handles async iterators
+- Metadata and input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Message, string, Data object, or iterator
+- `input_types`: `["Message"]` (automatic)
+
+---
+
+### MultilineInput
+
+**Field Type:** `"str"`
+
+A multi-line text input field with support for AI assistance.
+
+**Key Features:**
+- Multi-line text editing
+- AI-enabled assistance (optional)
+- Copy field functionality
+- Inherits from MessageTextInput
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Multi-line text string
+- `multiline`: `True` (default)
+- `ai_enabled`: Enable AI assistance
+- `copy_field`: Enable copy functionality
+
+**Example:**
+```python
+MultilineInput(
+    name="description",
+    display_name="Description",
+    placeholder="Enter a detailed description...",
+    multiline=True,
+    ai_enabled=True
+)
+```
+
+---
+
+### MultilineSecretInput
+
+**Field Type:** `"str"` (password)
+
+A multi-line secret/password input field with hidden text.
+
+**Key Features:**
+- Multi-line password input
+- Text is hidden/masked
+- Never tracked in telemetry
+- Input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Secret text
+- `multiline`: `True` (default)
+- `password`: `True` (default)
+- `track_in_telemetry`: `False` (automatic)
+
+**Example:**
+```python
+MultilineSecretInput(
+    name="api_key",
+    display_name="API Key",
+    placeholder="Enter your API key..."
+)
+```
+
+---
+
+### SecretStrInput
+
+**Field Type:** `"str"` (password)
+
+A single-line password/secret input field.
+
+**Key Features:**
+- Password field with hidden text
+- Loads from database by default
+- Never tracked in telemetry
+- Validates string, Message, Data, or iterator types
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Secret string
+- `password`: `True` (default)
+- `load_from_db`: `True` (default)
+- `track_in_telemetry`: `False` (automatic)
+
+**Example:**
+```python
+SecretStrInput(
+    name="password",
+    display_name="Password",
+    placeholder="Enter password"
+)
+```
+
+---
+
+### QueryInput
+
+**Field Type:** `"query"`
+
+A specialized text input for search queries with optional separator support.
+
+**Key Features:**
+- Designed for search/query operations
+- Optional separator for query parsing
+- Inherits from MessageTextInput
+- Supports query-specific formatting
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Query string
+- `separator`: Optional separator character (e.g., `","`, `" "`)
+
+**Example:**
+```python
+QueryInput(
+    name="search_query",
+    display_name="Search Query",
+    separator=" ",
+    placeholder="Enter search terms..."
+)
+```
+
+---
+
+## Numeric Inputs
+
+### IntInput
+
+**Field Type:** `"int"`
+
+An integer number input field with range validation support.
+
+**Key Features:**
+- Validates integer values
+- Converts floats to integers
+- Supports range specifications (min/max)
+- Supports list of integers
+- Tracked in telemetry (safe numeric parameter)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Integer value
+- `range_spec`: RangeSpec object for min/max validation
+- `is_list`: Support list of integers
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+IntInput(
+    name="max_tokens",
+    display_name="Max Tokens",
+    value=1000,
+    range_spec=RangeSpec(min=1, max=10000)
+)
+```
+
+---
+
+### FloatInput
+
+**Field Type:** `"float"`
+
+A floating-point number input field with range validation support.
+
+**Key Features:**
+- Validates float values
+- Converts integers to floats
+- Supports range specifications (min/max)
+- Supports list of floats
+- Tracked in telemetry (safe numeric parameter)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Float value
+- `range_spec`: RangeSpec object for min/max validation
+- `is_list`: Support list of floats
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+FloatInput(
+    name="temperature",
+    display_name="Temperature",
+    value=0.7,
+    range_spec=RangeSpec(min=0.0, max=2.0)
+)
+```
+
+---
+
+### SliderInput
+
+**Field Type:** `"slider"`
+
+A slider/range input for numeric values with visual slider control.
+
+**Key Features:**
+- Visual slider interface
+- Range specification (min/max)
+- Optional slider buttons
+- Optional slider input field
+- Custom min/max labels with icons
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Numeric value
+- `range_spec`: RangeSpec for min/max
+- `min_label`: Label for minimum value
+- `max_label`: Label for maximum value
+- `min_label_icon`: Icon for min label
+- `max_label_icon`: Icon for max label
+- `slider_buttons`: Show slider buttons
+- `slider_buttons_options`: Options for buttons
+- `slider_input`: Show input field
+
+**Example:**
+```python
+SliderInput(
+    name="confidence",
+    display_name="Confidence Level",
+    value=0.5,
+    range_spec=RangeSpec(min=0.0, max=1.0),
+    min_label="Low",
+    max_label="High",
+    slider_buttons=True
+)
+```
+
+---
+
+## Boolean Inputs
+
+### BoolInput
+
+**Field Type:** `"bool"`
+
+A boolean input field (toggle/switch).
+
+**Key Features:**
+- Toggle/switch UI component
+- Default value: `False`
+- Supports list of booleans
+- Tracked in telemetry (safe boolean flag)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Boolean value (default: `False`)
+- `is_list`: Support list of booleans
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+BoolInput(
+    name="enable_cache",
+    display_name="Enable Cache",
+    value=False
+)
+```
+
+---
+
+## Selection Inputs
+
+### DropdownInput
+
+**Field Type:** `"str"`
+
+A dropdown/select input with a list of predefined options.
+
+**Key Features:**
+- Dropdown menu with options
+- Optional combobox mode (custom values)
+- Optional toggle button
+- Options metadata support
+- Dialog inputs support
+- External options support
+- Tracked in telemetry (safe predefined choices)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Selected option string
+- `options`: List of option strings
+- `options_metadata`: List of metadata dicts for options
+- `combobox`: Allow custom values (default: `False`)
+- `toggle`: Show toggle button (default: `False`)
+- `toggle_value`: Toggle button value
+- `toggle_disable`: Disable toggle button
+- `dialog_inputs`: Dialog input configuration
+- `external_options`: External options configuration
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+DropdownInput(
+    name="language",
+    display_name="Language",
+    options=["English", "Spanish", "French", "German"],
+    value="English",
+    combobox=False
+)
+```
+
+---
+
+### MultiselectInput
+
+**Field Type:** `"str"`
+
+A multi-select dropdown input that allows selecting multiple options.
+
+**Key Features:**
+- Dropdown with multiple selection
+- Value is a list of selected strings
+- Optional combobox mode
+- Always a list (`is_list: True`)
+- Validates list of strings
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: List of selected option strings (default: `[]`)
+- `options`: List of available options
+- `is_list`: `True` (default, always enabled)
+- `combobox`: Allow custom values (default: `False`)
+
+**Example:**
+```python
+MultiselectInput(
+    name="categories",
+    display_name="Categories",
+    options=["Action", "Comedy", "Drama", "Thriller"],
+    value=["Action", "Comedy"],
+    combobox=True
+)
+```
+
+---
+
+### CheckboxInput
+
+**Field Type:** `"checkbox"`
+
+A checkbox input that displays a visible list of checkboxes in the UI.
+
+**Key Features:**
+- Visible list of checkboxes (not in dropdown)
+- Value is a list of selected checkbox labels
+- Always a list (`is_list: True`)
+- Validates list of strings
+- Tracked in telemetry (safe predefined choices)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: List of selected checkbox labels (default: `[]`)
+- `options`: List of checkbox option labels
+- `is_list`: `True` (default, always enabled)
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+CheckboxInput(
+    name="notifications",
+    display_name="Notification Preferences",
+    options=["Email", "SMS", "Push", "WhatsApp"],
+    value=["Email", "SMS"]
+)
+```
+
+---
+
+### TabInput
+
+**Field Type:** `"tab"`
+
+A tab input field with a maximum of 3 tabs, each with up to 20 characters.
+
+**Key Features:**
+- Tab-based selection UI
+- Maximum 3 tab options
+- Each option max 20 characters
+- Value must be one of the tab options
+- Tracked in telemetry (safe UI tab selection)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Selected tab option (string)
+- `options`: List of tab options (max 3, each max 20 chars)
+- `track_in_telemetry`: `True` (default)
+
+**Example:**
+```python
+TabInput(
+    name="view_mode",
+    display_name="View Mode",
+    options=["List", "Grid", "Card"],
+    value="List"
+)
+```
+
+---
+
+### SortableListInput
+
+**Field Type:** `"sortableList"`
+
+A sortable list input that allows reordering items.
+
+**Key Features:**
+- Drag-and-drop reordering
+- Helper text support
+- Helper text metadata
+- Search category support
+- Optional limit on items
+- Options with metadata
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: List of items
+- `options`: List of option dictionaries
+- `helper_text`: Helper text string
+- `helper_text_metadata`: Metadata for helper text
+- `search_category`: List of search categories
+- `limit`: Maximum number of items
+
+**Example:**
+```python
+SortableListInput(
+    name="priority_list",
+    display_name="Priority List",
+    options=[
+        {"name": "High", "value": "high"},
+        {"name": "Medium", "value": "medium"},
+        {"name": "Low", "value": "low"}
+    ],
+    helper_text="Drag items to reorder"
+)
+```
+
+---
+
+## Data Structure Inputs
+
+### DictInput
+
+**Field Type:** `"dict"`
+
+A dictionary input for key-value pairs.
+
+**Key Features:**
+- Key-value pair editing
+- Default value: empty dict `{}`
+- Supports list of dictionaries
+- Input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Dictionary value (default: `{}`)
+- `is_list`: Support list of dicts
+
+**Example:**
+```python
+DictInput(
+    name="metadata",
+    display_name="Metadata",
+    value={"key1": "value1", "key2": "value2"}
+)
+```
+
+---
+
+### NestedDictInput
+
+**Field Type:** `"NestedDict"`
+
+A nested dictionary input for complex hierarchical data structures.
+
+**Key Features:**
+- Nested dictionary structure
+- Default value: empty dict `{}`
+- Supports list of nested dictionaries
+- Metadata and input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Nested dictionary (default: `{}`)
+- `is_list`: Support list of nested dicts
+
+**Example:**
+```python
+NestedDictInput(
+    name="config",
+    display_name="Configuration",
+    value={
+        "database": {
+            "host": "localhost",
+            "port": 5432
+        },
+        "cache": {
+            "enabled": True
+        }
+    }
+)
+```
+
+---
+
+### TableInput
+
+**Field Type:** `"table"`
+
+A table input that accepts tabular data (list of dictionaries or DataFrame).
+
+**Key Features:**
+- Table data structure
+- Accepts list of dicts, DataFrame, or single dict/Data
+- Always a list (`is_list: True`)
+- Validates row format
+- Converts DataFrame to list of dicts automatically
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: List of row dictionaries or DataFrame
+- `is_list`: `True` (default, always enabled)
+- `table_schema`: Table schema definition
+- `trigger_text`: Text for trigger button
+- `trigger_icon`: Icon for trigger button
+- `table_icon`: Icon for table
+- `table_options`: Table options configuration
+
+**Example:**
+```python
+TableInput(
+    name="data_table",
+    display_name="Data Table",
+    value=[
+        {"name": "John", "age": 30, "city": "NYC"},
+        {"name": "Jane", "age": 25, "city": "LA"}
+    ]
+)
+```
+
+---
+
+## File and Code Inputs
+
+### FileInput
+
+**Field Type:** `"file"`
+
+A file upload input field.
+
+**Key Features:**
+- File upload functionality
+- Supports specific file types
+- Supports list of files
+- Temporary file support
+- Never tracked in telemetry (may contain PII)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: File path(s)
+- `file_types`: List of allowed file extensions (without dot)
+- `file_path`: File path or list of paths
+- `is_list`: Support list of files
+- `temp_file`: Use temporary file (default: `False`)
+- `track_in_telemetry`: `False` (automatic)
+
+**Example:**
+```python
+FileInput(
+    name="document",
+    display_name="Document",
+    file_types=["pdf", "docx", "txt"],
+    temp_file=True
+)
+```
+
+---
+
+### CodeInput
+
+**Field Type:** `"code"`
+
+A code editor input field.
+
+**Key Features:**
+- Code editor interface
+- Syntax highlighting support
+- Supports list of code blocks
+- Input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Code string
+- `is_list`: Support list of code blocks
+
+**Example:**
+```python
+CodeInput(
+    name="script",
+    display_name="Python Script",
+    value="def hello():\n    print('Hello, World!')"
+)
+```
+
+---
+
+### PromptInput
+
+**Field Type:** `"prompt"`
+
+A prompt input field for AI prompts.
+
+**Key Features:**
+- Specialized for prompt editing
+- Supports list of prompts
+- Input tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Prompt string
+- `is_list`: Support list of prompts
+
+**Example:**
+```python
+PromptInput(
+    name="system_prompt",
+    display_name="System Prompt",
+    value="You are a helpful assistant."
+)
+```
+
+---
+
+## Specialized Inputs
+
+### ModelInput
+
+**Field Type:** `"model"`
+
+A model input field with automatic LanguageModel connection support.
+
+**Key Features:**
+- Automatic LanguageModel connection
+- Refresh button enabled by default
+- External options for connecting other models
+- Supports list of model dicts or strings
+- Auto-converts strings to model dicts
+- Input types: `["LanguageModel"]`
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Model name (string), list of strings, or list of model dicts
+- `placeholder`: "Setup Provider" (default)
+- `input_types`: `["LanguageModel"]` (automatic)
+- `refresh_button`: `True` (default)
+- `external_options`: External options configuration
+- `model_name`: Model name
+- `model_type`: "language" or "embedding" (default: "language")
+- `model_options`: List of model option dicts
+- `temperature`: Temperature parameter
+- `max_tokens`: Max tokens parameter
+- `limit`: Limit for displayed options
+
+**Example:**
+```python
+ModelInput(
+    name="llm",
+    display_name="Language Model",
+    value="gpt-4o",
+    refresh_button=True
+)
+```
+
+---
+
+### ToolsInput
+
+**Field Type:** `"tools"`
+
+An input for managing a list of tools (activate, deactivate, edit).
+
+**Key Features:**
+- Tool management interface
+- Value is list of tool dictionaries
+- Always a list (`is_list: True`)
+- Real-time refresh enabled
+- Metadata tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: List of tool dictionaries (default: `[]`)
+- `is_list`: `True` (default, always enabled)
+- `real_time_refresh`: `True` (default)
+
+**Example:**
+```python
+ToolsInput(
+    name="active_tools",
+    display_name="Active Tools",
+    value=[
+        {"name": "calculator", "enabled": True},
+        {"name": "search", "enabled": False}
+    ]
+)
+```
+
+---
+
+### McpInput
+
+**Field Type:** `"mcp"`
+
+An input for MCP (Model Context Protocol) configuration.
+
+**Key Features:**
+- MCP configuration interface
+- Value is a dictionary
+- Never tracked in telemetry (may contain sensitive data)
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: MCP configuration dictionary (default: `{}`)
+- `track_in_telemetry`: `False` (automatic)
+
+**Example:**
+```python
+McpInput(
+    name="mcp_config",
+    display_name="MCP Configuration",
+    value={"server": "localhost", "port": 8000}
+)
+```
+
+---
+
+### LinkInput
+
+**Field Type:** `"link"`
+
+A link input that displays as a clickable link/button.
+
+**Key Features:**
+- Link/button UI component
+- Optional icon and text
+- Simple link display
+
+**Common Fields:**
+- `name` (required): Field name
+- `value`: Link URL or identifier
+- `icon`: Icon name for the link
+- `text`: Text to display
+
+**Example:**
+```python
+LinkInput(
+    name="documentation",
+    display_name="Documentation",
+    icon="ExternalLink",
+    text="View Documentation",
+    value="https://docs.example.com"
+)
+```
+
+---
+
+## Handle/Connector Inputs
+
+### DataInput
+
+**Field Type:** `"other"`  
+**Input Types:** `["Data"]`
+
+A handle input that receives Data objects from other components.
+
+**Key Features:**
+- Handle for Data objects
+- Input types: `["Data"]`
+- Input and metadata tracing enabled
+- Supports list of Data objects
+
+**Common Fields:**
+- `name` (required): Field name
+- `input_types`: `["Data"]` (automatic)
+- `is_list`: Support list of Data objects
+
+**Example:**
+```python
+DataInput(
+    name="input_data",
+    display_name="Input Data",
+    input_types=["Data"]
+)
+```
+
+---
+
+### DataFrameInput
+
+**Field Type:** `"other"`  
+**Input Types:** `["DataFrame"]`
+
+A handle input that receives DataFrame objects.
+
+**Key Features:**
+- Handle for DataFrame objects
+- Input types: `["DataFrame"]`
+- Input and metadata tracing enabled
+- Supports list of DataFrames
+
+**Common Fields:**
+- `name` (required): Field name
+- `input_types`: `["DataFrame"]` (automatic)
+- `is_list`: Support list of DataFrames
+
+**Example:**
+```python
+DataFrameInput(
+    name="dataframe",
+    display_name="DataFrame",
+    input_types=["DataFrame"]
+)
+```
+
+---
+
+### HandleInput
+
+**Field Type:** `"other"`
+
+A generic handle input for specific types (e.g., BaseLanguageModel, BaseRetriever).
+
+**Key Features:**
+- Generic handle for any type
+- Requires `input_types` to be specified
+- Supports list of handles
+- Metadata tracing enabled
+
+**Common Fields:**
+- `name` (required): Field name
+- `input_types`: List of accepted input types (required)
+- `is_list`: Support list of handles
+
+**Example:**
+```python
+HandleInput(
+    name="retriever",
+    display_name="Retriever",
+    input_types=["BaseRetriever", "VectorStore"]
+)
+```
+
+---
+
+## Common Base Fields
+
+All input types inherit from `BaseInputMixin` and support these common fields:
+
+### Required Fields
+- `name` (string): The field name/identifier
+
+### Optional Fields
+- `display_name` (string): Display name shown in UI
+- `value` (any): Default value for the field
+- `required` (bool): Whether the field is required (default: `False`)
+- `placeholder` (string): Placeholder text
+- `show` (bool): Whether to show the field (default: `True`)
+- `advanced` (bool): Whether field is in advanced section (default: `False`)
+- `helper_text` (string): Helper text displayed near the field
+- `info` (string): Additional information shown in tooltip
+- `readonly` (bool): Whether field is read-only
+- `disabled` (bool): Whether field is disabled
+- `dynamic` (bool): Whether field is dynamic (default: `False`)
+- `input_types` (list[str]): List of accepted input types for handles
+- `real_time_refresh` (bool): Enable real-time refresh
+- `refresh_button` (bool): Show refresh button
+- `refresh_button_text` (string): Text for refresh button
+- `track_in_telemetry` (bool): Whether to track in telemetry (default varies by type)
+
+---
+
+## Best Practices
+
+1. **Choose the Right Input Type**: Select the input type that best matches your data structure and use case.
+
+2. **Validation**: Use appropriate validators and range specifications for numeric inputs.
+
+3. **Security**: Use `SecretStrInput` or `MultilineSecretInput` for sensitive data. These are never tracked in telemetry.
+
+4. **Lists**: Enable `is_list` when you need to support multiple values of the same type.
+
+5. **Options**: For selection inputs, always provide clear, descriptive option labels.
+
+6. **Helper Text**: Use `helper_text` and `info` to guide users on how to use the field.
+
+7. **Required Fields**: Mark essential fields as `required=True` to ensure data completeness.
+
+8. **Telemetry**: Be aware that some input types automatically disable telemetry tracking for sensitive data (passwords, files, connections, etc.).
+
+---
+
+## Summary Table
+
+| Input Type | Field Type | Value Type | List Support | Telemetry |
+|------------|------------|------------|--------------|-----------|
+| StrInput | `"str"` | string | Yes | Yes |
+| MessageInput | `"str"` | Message | Yes | Yes |
+| MessageTextInput | `"str"` | string/Message | Yes | Yes |
+| MultilineInput | `"str"` | string | Yes | Yes |
+| MultilineSecretInput | `"str"` | string | Yes | No |
+| SecretStrInput | `"str"` | string | Yes | No |
+| QueryInput | `"query"` | string | Yes | Yes |
+| IntInput | `"int"` | int | Yes | Yes |
+| FloatInput | `"float"` | float | Yes | Yes |
+| SliderInput | `"slider"` | number | No | Yes |
+| BoolInput | `"bool"` | bool | Yes | Yes |
+| DictInput | `"dict"` | dict | Yes | Yes |
+| NestedDictInput | `"NestedDict"` | dict | Yes | Yes |
+| TableInput | `"table"` | list[dict] | Yes | Yes |
+| DropdownInput | `"str"` | string | No | Yes |
+| MultiselectInput | `"str"` | list[str] | Yes | Yes |
+| CheckboxInput | `"checkbox"` | list[str] | Yes | Yes |
+| TabInput | `"tab"` | string | No | Yes |
+| SortableListInput | `"sortableList"` | list | No | Yes |
+| FileInput | `"file"` | string/list | Yes | No |
+| CodeInput | `"code"` | string | Yes | Yes |
+| PromptInput | `"prompt"` | string | Yes | Yes |
+| ModelInput | `"model"` | string/list[dict] | Yes | Yes |
+| ToolsInput | `"tools"` | list[dict] | Yes | Yes |
+| McpInput | `"mcp"` | dict | No | No |
+| LinkInput | `"link"` | string | No | Yes |
+| DataInput | `"other"` | Data | Yes | Yes |
+| DataFrameInput | `"other"` | DataFrame | Yes | Yes |
+| HandleInput | `"other"` | any | Yes | Yes |
+
+---
+
+## Additional Resources
+
+- [Langflow Documentation](https://docs.langflow.org)
+- [Input Mixins Reference](./input_mixin.py)
+- [Component Development Guide](./components.md)
+
+---
