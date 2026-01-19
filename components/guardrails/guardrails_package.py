@@ -1,8 +1,8 @@
 from langflow.custom import Component
 from langflow.io import StrInput, MultilineInput, Output
 from langflow.schema import Data
-from guardrails import Guard
-from guardrails.hub import register_validator
+from guardrails_ai import Guard  # type: ignore[import-not-found]
+from guardrails_ai.hub import register_validator  # type: ignore[import-not-found]
 
 class GuardrailsValidator(Component):
     display_name = "Guardrails Validator"

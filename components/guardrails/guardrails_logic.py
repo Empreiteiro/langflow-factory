@@ -1,7 +1,9 @@
+import re
+
 from langflow.custom import Component
 from langflow.io import BoolInput, MessageTextInput, Output, HandleInput, MessageInput
 from langflow.logging.logger import logger
-from langflow.schema.message import Message
+from langflow.schema import Data
 
 
 class GuardrailsComponent(Component):
@@ -112,6 +114,12 @@ class GuardrailsComponent(Component):
         safe_input = safe_input.replace("===USER_INPUT_START===", "[REMOVED]").replace("===USER_INPUT_END===", "[REMOVED]")
         safe_input = safe_input.replace("---USER_INPUT_START---", "[REMOVED]").replace("---USER_INPUT_END---", "[REMOVED]")
         
+        # Quick heuristic for jailbreak/prompt injection to avoid false passes
+        if check_type in ("Jailbreak", "Prompt Injection"):
+            heuristic_reason = self._heuristic_jailbreak_check(input_text)
+            if heuristic_reason:
+                return False, heuristic_reason
+
         # Create more specific prompts for different check types to reduce false positives
         if check_type == "Prompt Injection":
             prompt = f"""<<<SYSTEM_INSTRUCTIONS_START>>>
@@ -205,27 +213,11 @@ Now analyze the user input above and respond according to the instructions:"""
             else:
                 result = str(llm(prompt)).strip()
             
-            # Validate LLM response - check for empty or error responses
+            # Validate LLM response - check for empty responses
             if not result or len(result.strip()) == 0:
                 error_msg = f"LLM returned empty response for {check_type} check. Please verify your API key and credits."
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
-            
-            # Check for common error patterns in the response
-            result_lower = result.lower()
-            error_indicators = [
-                'error', 'invalid', 'unauthorized', 'authentication', 
-                'api key', 'credits', 'quota', 'rate limit', 'forbidden',
-                '401', '403', '429', '500', '502', '503'
-            ]
-            
-            # If response looks like an error message, treat it as an error
-            if any(indicator in result_lower for indicator in error_indicators):
-                # Check if it's a short error message (likely an API error, not a validation result)
-                if len(result) < 200:
-                    error_msg = f"LLM API error detected for {check_type} check: {result[:150]}. Please verify your API key and credits."
-                    logger.error(error_msg)
-                    raise RuntimeError(error_msg)
             
             # Parse response more robustly
             result_upper = result.upper()
@@ -264,6 +256,37 @@ Now analyze the user input above and respond according to the instructions:"""
                     decision = "NO"
                     explanation = result[result_upper.find('NO') + 2:].strip()
             
+            # If we couldn't determine, check for explicit API error patterns
+            if decision is None:
+                result_lower = result.lower()
+                error_indicators = [
+                    "unauthorized",
+                    "authentication failed",
+                    "invalid api key",
+                    "incorrect api key",
+                    "invalid token",
+                    "quota exceeded",
+                    "rate limit",
+                    "forbidden",
+                    "bad request",
+                    "service unavailable",
+                    "internal server error",
+                    "request failed",
+                    "401",
+                    "403",
+                    "429",
+                    "500",
+                    "502",
+                    "503",
+                ]
+                if any(indicator in result_lower for indicator in error_indicators) and len(result) < 300:
+                    error_msg = (
+                        f"LLM API error detected for {check_type} check: {result[:150]}. "
+                        "Please verify your API key and credits."
+                    )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+
             # Default to NO (pass) if we can't determine - be conservative
             if decision is None:
                 decision = "NO"
@@ -281,6 +304,27 @@ Now analyze the user input above and respond according to the instructions:"""
             error_msg = f"Data processing error during {check_type} check: {e!s}"
             logger.error(error_msg)
             raise ValueError(error_msg) from e
+
+    def _heuristic_jailbreak_check(self, input_text: str) -> str | None:
+        text = input_text.lower()
+        patterns = [
+            r"ignore .*instruc",
+            r"forget .*instruc",
+            r"disregard .*instruc",
+            r"ignore .*previous",
+            r"system prompt",
+            r"prompt do sistema",
+            r"sem restric",
+            r"sem filtros",
+            r"bypass",
+            r"jailbreak",
+            r"act as",
+            r"no rules",
+        ]
+        for pattern in patterns:
+            if re.search(pattern, text):
+                return "Matched jailbreak or prompt injection pattern."
+        return None
 
     def _run_validation(self):
         """Run validation once and store the result."""
@@ -373,7 +417,7 @@ Now analyze the user input above and respond according to the instructions:"""
         
         return all_passed
 
-    def process_pass(self) -> Message:
+    def process_pass(self) -> Data:
         """Process the Pass output - only activates if all enabled guardrails pass."""
         # Run validation once
         validation_passed = self._run_validation()
@@ -385,18 +429,21 @@ Now analyze the user input above and respond according to the instructions:"""
             
             # Get Pass override message
             pass_override = getattr(self, "pass_override", None)
-            if pass_override and hasattr(pass_override, 'text') and pass_override.text and str(pass_override.text).strip():
-                return Message(text=str(pass_override.text))
+            if pass_override and hasattr(pass_override, "text") and pass_override.text and str(pass_override.text).strip():
+                payload = {"text": str(pass_override.text), "result": "pass"}
+                return Data(data=payload)
             elif pass_override and isinstance(pass_override, str) and pass_override.strip():
-                return Message(text=str(pass_override))
+                payload = {"text": str(pass_override), "result": "pass"}
+                return Data(data=payload)
             else:
-                return Message(text=input_text)
+                payload = {"text": input_text, "result": "pass"}
+                return Data(data=payload)
         
         # Validation failed - stop this output (itself)
         self.stop("pass_result")
-        return Message(content="")
+        return Data(data={})
 
-    def process_fail(self) -> Message:
+    def process_fail(self) -> Data:
         """Process the Fail output - only activates if any enabled guardrail fails."""
         # Run validation once (will use cached result if already ran)
         validation_passed = self._run_validation()
@@ -408,13 +455,28 @@ Now analyze the user input above and respond according to the instructions:"""
             
             # Get Fail override message
             fail_override = getattr(self, "fail_override", None)
-            if fail_override and hasattr(fail_override, 'text') and fail_override.text and str(fail_override.text).strip():
-                return Message(text=str(fail_override.text))
+            if fail_override and hasattr(fail_override, "text") and fail_override.text and str(fail_override.text).strip():
+                payload = {
+                    "text": str(fail_override.text),
+                    "result": "fail",
+                    "justification": "\n".join(self._failed_checks),
+                }
+                return Data(data=payload)
             elif fail_override and isinstance(fail_override, str) and fail_override.strip():
-                return Message(text=str(fail_override))
+                payload = {
+                    "text": str(fail_override),
+                    "result": "fail",
+                    "justification": "\n".join(self._failed_checks),
+                }
+                return Data(data=payload)
             else:
-                return Message(text=input_text)
+                payload = {
+                    "text": input_text,
+                    "result": "fail",
+                    "justification": "\n".join(self._failed_checks),
+                }
+                return Data(data=payload)
         
         # All passed - stop this output (itself)
         self.stop("failed_result")
-        return Message(content="")
+        return Data(data={})
