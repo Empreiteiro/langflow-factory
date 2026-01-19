@@ -26,11 +26,15 @@ class GoogleVeoVideoGenerator(Component):
             display_name="Model",
             info="Veo model to use for video generation",
             options=[
-                "veo-3.0-generate-preview",  # Latest Veo 3.0 model
+                "veo-3.1-generate-preview",
+                "veo-3.0-generate-001",  # Latest Veo 3.0 model (stable)
+                "veo-3.0-generate-preview",  # Veo 3.0 preview model
+                "models/veo-3.0-generate-001",  # Full format for Veo 3.0
+                "models/veo-3.0-generate-preview",  # Full format for Veo 3.0 preview
                 "veo-2.0-generate-001",  # Veo 2.0 model (requires GCP billing)
                 "models/veo-2.0-generate-001",  # Full format for Veo 2.0
             ],
-            value="veo-2.0-generate-001",  # Default to latest Veo 3.0
+            value="veo-3.0-generate-001",  # Default to latest Veo 3.0
         ),
         MultilineInput(
             name="prompt",
@@ -53,10 +57,10 @@ class GoogleVeoVideoGenerator(Component):
             display_name="Allow People",
             info="Whether to allow people generation in videos",
             options=[
-                "dont_allow",   # Don't allow people
+                "default",  # Use model default behavior
                 "allow_adult",  # Allow adult people
             ],
-            value="dont_allow",
+            value="default",
         ),
     ]
 
@@ -71,13 +75,18 @@ class GoogleVeoVideoGenerator(Component):
             client = genai.Client(api_key=self.api_key)
 
             # Generate video using the selected model
+            # Only set person_generation when explicitly requested; some models
+            # do not support "dont_allow" and default is safer.
+            config_kwargs = {
+                "aspect_ratio": self.aspect_ratio,
+            }
+            if self.allow_people != "default":
+                config_kwargs["person_generation"] = self.allow_people
+
             operation = client.models.generate_videos(
                 model=self.model,  # Use selected model instead of hardcoded
                 prompt=self.prompt,
-                config=types.GenerateVideosConfig(
-                    person_generation=self.allow_people,
-                    aspect_ratio=self.aspect_ratio,
-                ),
+                config=types.GenerateVideosConfig(**config_kwargs),
             )
 
             self.status = f"Waiting for video generation completion using {self.model}..."

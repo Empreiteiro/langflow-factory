@@ -300,7 +300,7 @@ Now analyze the user input above and respond according to the instructions:"""
         # Validate LLM is provided and usable
         if not llm:
             error_msg = "No LLM provided for validation"
-            self.status = f"❌ {error_msg}"
+            self.status = f"ERROR: {error_msg}"
             self._validation_result = False
             self._failed_checks.append("LLM Configuration: No LLM component connected. Please connect a Language Model component.")
             logger.error(error_msg)
@@ -309,7 +309,7 @@ Now analyze the user input above and respond according to the instructions:"""
         # Check if LLM has required methods
         if not (hasattr(llm, 'invoke') or callable(llm)):
             error_msg = "Invalid LLM configuration - LLM component is not properly configured"
-            self.status = f"❌ {error_msg}"
+            self.status = f"ERROR: {error_msg}"
             self._validation_result = False
             self._failed_checks.append("LLM Configuration: LLM component is not properly configured. Please verify your LLM component.")
             logger.error(error_msg)
@@ -357,18 +357,18 @@ Now analyze the user input above and respond according to the instructions:"""
             if not passed:
                 all_passed = False
                 self._failed_checks.append(f"{check_name}: {reason}")
-                self.status = f"❌ {check_name} check failed: {reason}"
+                self.status = f"FAILED: {check_name} check failed: {reason}"
                 logger.warning(f"{check_name} check failed: {reason}")
         
         # Store result
         self._validation_result = all_passed
         
         if all_passed:
-            self.status = f"✅ All {len(checks_to_run)} guardrail checks passed"
+            self.status = f"OK: All {len(checks_to_run)} guardrail checks passed"
             logger.info(f"Guardrail validation completed successfully - all {len(checks_to_run)} checks passed")
         else:
             failure_summary = "\n".join(self._failed_checks)
-            self.status = f"❌ Guardrail validation failed:\n{failure_summary}"
+            self.status = f"FAILED: Guardrail validation failed:\n{failure_summary}"
             logger.error(f"Guardrail validation failed with {len(self._failed_checks)} failed checks")
         
         return all_passed

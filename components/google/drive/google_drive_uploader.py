@@ -1,5 +1,5 @@
 from lfx.custom import Component
-from lfx.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput
+from lfx.io import StrInput, FileInput, MultilineInput, DropdownInput, Output, MessageInput, SecretStrInput, TabInput
 from lfx.schema import Data
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -19,6 +19,22 @@ class GoogleDriveUploader(Component):
     FILE_TYPE_CHOICES = ["jpg", "txt", "json", "mp3", "slides", "docs"]
 
     inputs = [
+        TabInput(
+            name="auth_type",
+            display_name="Authentication Type",
+            options=["secret", "file"],
+            value="secret",
+            info="Select the authentication method for Google Cloud Platform credentials. 'secret' for Secret String, 'file' for JSON File.",
+            real_time_refresh=True,
+        ),
+        SecretStrInput(
+            name="service_account_key",
+            display_name="GCP Credentials Secret Key",
+            info="Your Google Cloud Platform service account JSON key as a secret string (complete JSON content).",
+            required=True,
+            advanced=True,
+            show=True,
+        ),
         MultilineInput(
             name="file_content",
             display_name="File Content",
@@ -53,12 +69,37 @@ class GoogleDriveUploader(Component):
             file_types=["json"],
             info="Upload your Google Cloud Platform service account JSON key.",
             required=True,
+            advanced=True,
+            show=False,
         ),
     ]
 
     outputs = [
         Output(name="file_url", display_name="File URL", method="upload_file"),
     ]
+
+    def update_build_config(self, build_config, field_value, field_name=None):
+        """Update build configuration to show/hide fields based on authentication type selection."""
+        if field_name != "auth_type":
+            return build_config
+
+        auth_type = str(field_value) if field_value else "secret"
+        if auth_type not in ["secret", "file"]:
+            auth_type = "secret"
+
+        if "service_account_key" in build_config:
+            build_config["service_account_key"]["show"] = False
+        if "service_account_json" in build_config:
+            build_config["service_account_json"]["show"] = False
+
+        if auth_type == "secret":
+            if "service_account_key" in build_config:
+                build_config["service_account_key"]["show"] = True
+        elif auth_type == "file":
+            if "service_account_json" in build_config:
+                build_config["service_account_json"]["show"] = True
+
+        return build_config
 
     def _sanitize_filename(self, filename):
         """Sanitize filename to ensure it's valid and has minimum length"""
@@ -113,8 +154,28 @@ class GoogleDriveUploader(Component):
             # Extract folder ID from MessageInput
             extracted_folder_id = self._extract_folder_id(self.folder_id)
             
-            with open(self.service_account_json, "r", encoding="utf-8") as f:
-                credentials_dict = json.load(f)
+            auth_type = getattr(self, "auth_type", "secret")
+            auth_type = str(auth_type) if auth_type else "secret"
+            if auth_type not in ["secret", "file"]:
+                auth_type = "secret"
+
+            if auth_type == "file":
+                if not hasattr(self, "service_account_json") or not self.service_account_json:
+                    raise ValueError("Service account JSON file is required when using file authentication.")
+                try:
+                    with open(self.service_account_json, "r", encoding="utf-8") as f:
+                        credentials_dict = json.load(f)
+                except FileNotFoundError:
+                    raise ValueError(f"Service account JSON file not found: {self.service_account_json}")
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in service account file: {str(e)}")
+            else:
+                if not hasattr(self, "service_account_key") or not self.service_account_key:
+                    raise ValueError("Service account key is required when using secret string authentication.")
+                try:
+                    credentials_dict = json.loads(self.service_account_key)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in service account key: {str(e)}")
 
             credentials = service_account.Credentials.from_service_account_info(
                 credentials_dict,
