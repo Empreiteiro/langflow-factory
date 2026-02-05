@@ -26,6 +26,18 @@ Python scripts to backup and import flows from your Langflow installation.
 - ✅ Environment variable configuration
 - ✅ Detailed and summary view options
 
+### Projects Endpoints Explorer Scripts (`projects_endpoints_list.py`, `projects_endpoints_get.py`)
+- ✅ Explora os endpoints de projetos (lista e detalhe)
+- ✅ Exibe status code, tempo de resposta e headers
+- ✅ Dump de JSON bruto e metadados
+- ✅ Parametros de timeout e limite de exibicao
+
+### Projects Upload/Download Explorer Scripts (`projects_endpoints_upload.py`, `projects_endpoints_download.py`)
+- ✅ Explora upload e download de projetos
+- ✅ Upload via multipart/form-data
+- ✅ Download de ZIP com nome automatico
+- ✅ Dump de metadados da resposta
+
 ### Flows List Script (`list_flows.py`)
 - ✅ List all Langflow flows with pagination support
 - ✅ Show flow IDs, names, descriptions, and status
@@ -176,6 +188,57 @@ python backup_flows_zip.py \
 | `--show-details` | ❌ | Show detailed project information |
 | `--export-json` | ❌ | Export projects list to JSON file |
 | `--output-file` | ❌ | Output file name for JSON export (default: projects_list.json) |
+
+#### Projects Endpoints Explorer Parameters
+
+**List endpoint (`projects_endpoints_list.py`)**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--langflow-url` | ❌ | Langflow URL (default: LANGFLOW_URL env var) |
+| `--langflow-token` | ❌ | Langflow API token (default: LANGFLOW_TOKEN env var) |
+| `--timeout` | ❌ | Timeout em segundos (default: 30) |
+| `--max-items` | ❌ | Quantidade maxima de projetos exibidos (default: 20) |
+| `--show-headers` | ❌ | Exibe headers da resposta |
+| `--show-body` | ❌ | Exibe o JSON bruto |
+| `--dump-dir` | ❌ | Diretorio para salvar JSON e metadados |
+
+**Project detail endpoint (`projects_endpoints_get.py`)**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--project-id` | ✅ | ID do projeto a consultar |
+| `--langflow-url` | ❌ | Langflow URL (default: LANGFLOW_URL env var) |
+| `--langflow-token` | ❌ | Langflow API token (default: LANGFLOW_TOKEN env var) |
+| `--timeout` | ❌ | Timeout em segundos (default: 30) |
+| `--show-headers` | ❌ | Exibe headers da resposta |
+| `--show-body` | ❌ | Exibe o JSON bruto |
+| `--dump-dir` | ❌ | Diretorio para salvar JSON e metadados |
+
+#### Projects Upload/Download Explorer Parameters
+
+**Upload endpoint (`projects_endpoints_upload.py`)**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--file-path` | ✅ | Arquivo para upload (ex: .zip ou .json) |
+| `--langflow-url` | ❌ | Langflow URL (default: LANGFLOW_URL env var) |
+| `--langflow-token` | ❌ | Langflow API token (default: LANGFLOW_TOKEN env var) |
+| `--timeout` | ❌ | Timeout em segundos (default: 60) |
+| `--max-items` | ❌ | Quantidade maxima exibida no resumo (default: 10) |
+| `--show-headers` | ❌ | Exibe headers da resposta |
+| `--show-body` | ❌ | Exibe o JSON bruto |
+| `--dump-dir` | ❌ | Diretorio para salvar JSON e metadados |
+
+**Download endpoint (`projects_endpoints_download.py`)**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--project-id` | ✅ | ID do projeto para download |
+| `--langflow-url` | ❌ | Langflow URL (default: LANGFLOW_URL env var) |
+| `--langflow-token` | ❌ | Langflow API token (default: LANGFLOW_TOKEN env var) |
+| `--timeout` | ❌ | Timeout em segundos (default: 120) |
+| `--output-dir` | ❌ | Diretorio de saida (default: ./project_downloads) |
+| `--output-name` | ❌ | Nome do arquivo de saida |
+| `--overwrite` | ❌ | Sobrescreve o arquivo se ja existir |
+| `--show-headers` | ❌ | Exibe headers da resposta |
+| `--dump-dir` | ❌ | Diretorio para salvar metadados |
 
 #### Flows List Script Parameters
 
@@ -372,6 +435,38 @@ python list_projects.py --export-json --output-file my_projects.json
 
 # With environment variables
 python list_projects.py --show-details --export-json
+```
+
+#### 5.1. Explorar endpoints de Projects
+
+```bash
+# Listar projetos com metadados do endpoint
+python projects_endpoints_list.py --show-headers
+
+# Listar e salvar JSON bruto + metadados
+python projects_endpoints_list.py --dump-dir ./project_endpoint_dump
+
+# Consultar um projeto especifico
+python projects_endpoints_get.py --project-id 12345 --show-body
+
+# Consultar e salvar JSON bruto + metadados
+python projects_endpoints_get.py --project-id 12345 --dump-dir ./project_endpoint_dump
+```
+
+#### 5.2. Upload/Download de projetos
+
+```bash
+# Upload de arquivo (zip/json)
+python projects_endpoints_upload.py --file-path ./flows.zip
+
+# Upload com dump de JSON/metadados
+python projects_endpoints_upload.py --file-path ./flows.zip --dump-dir ./project_endpoint_dump
+
+# Download de projeto
+python projects_endpoints_download.py --project-id 12345
+
+# Download com nome customizado e metadados
+python projects_endpoints_download.py --project-id 12345 --output-name projeto_12345.zip --dump-dir ./project_endpoint_dump
 ```
 
 #### 6. List Flows
