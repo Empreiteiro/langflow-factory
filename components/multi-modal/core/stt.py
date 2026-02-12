@@ -17,6 +17,7 @@ class ModelSTT(Component):
     description = "Converts speech to text using multiple STT providers with model selection."
     icon = "notebook-pen"
     name = "ModelSTTComponent"
+    beta=True
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
@@ -72,7 +73,7 @@ class ModelSTT(Component):
         ),
         FileInput(
             name="audio_file",
-            display_name="Audio File",
+            display_name="File",
             info="Upload an audio file (mp3, mp4, mpeg, mpga, wav, or webm).",
             file_types=["mp3", "mp4", "mpeg", "mpga", "wav", "webm"],
             required=True,

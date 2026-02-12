@@ -26,6 +26,7 @@ class ModelImageAnalyzer(Component):
     description = "Analyzes images using multiple providers with model selection."
     icon = "image"
     name = "ModelImageAnalyzerComponent"
+    beta=True
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",

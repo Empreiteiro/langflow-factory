@@ -11,6 +11,7 @@ class ModelTTS(Component):
     description = "Converts text to speech using multiple TTS providers with model selection."
     icon = "book-audio"
     name = "ModelTTSComponent"
+    beta=True
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
