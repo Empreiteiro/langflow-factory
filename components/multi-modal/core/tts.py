@@ -15,21 +15,18 @@ class ModelTTS(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
         "ElevenLabs",
         "Google",
     ]
 
     TTS_MODELS_BY_PROVIDER = {
         "OpenAI": ["tts-1", "tts-1-hd"],
-        "OpenAI-Compatible": ["tts-1", "tts-1-hd"],
         "ElevenLabs": ["eleven_multilingual_v2", "eleven_turbo_v2"],
         "Google": ["standard", "wavenet", "neural2"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -40,6 +37,7 @@ class ModelTTS(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}, {"icon": "elevenlabs"}, {"icon": "GoogleGenerativeAI"}],
         ),
         DropdownInput(
             name="model",
@@ -59,7 +57,7 @@ class ModelTTS(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
             show=False,
@@ -218,9 +216,9 @@ class ModelTTS(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
-            openai_visible = provider in ("OpenAI", "OpenAI-Compatible")
+            openai_visible = provider == "OpenAI"
             eleven_visible = provider == "ElevenLabs"
             google_visible = provider == "Google"
 
@@ -665,21 +663,18 @@ class ModelTTS(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
         "ElevenLabs",
         "Google",
     ]
 
     TTS_MODELS_BY_PROVIDER = {
         "OpenAI": ["tts-1", "tts-1-hd"],
-        "OpenAI-Compatible": ["tts-1", "tts-1-hd"],
         "ElevenLabs": ["eleven_multilingual_v2", "eleven_turbo_v2"],
         "Google": ["standard", "wavenet", "neural2"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -690,6 +685,7 @@ class ModelTTS(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}, {"icon": "ElevenLabs"}, {"icon": "Google"}],
         ),
         DropdownInput(
             name="model",
@@ -709,7 +705,7 @@ class ModelTTS(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
             show=False,
@@ -854,9 +850,9 @@ class ModelTTS(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
-            openai_visible = provider in ("OpenAI", "OpenAI-Compatible")
+            openai_visible = provider == "OpenAI"
             eleven_visible = provider == "ElevenLabs"
             google_visible = provider == "Google"
 
@@ -1176,21 +1172,18 @@ class ModelTTS(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
         "ElevenLabs",
         "Google",
     ]
 
     TTS_MODELS_BY_PROVIDER = {
         "OpenAI": ["tts-1", "tts-1-hd"],
-        "OpenAI-Compatible": ["tts-1", "tts-1-hd"],
         "ElevenLabs": ["eleven_multilingual_v2", "eleven_turbo_v2"],
         "Google": ["standard", "wavenet", "neural2"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -1201,6 +1194,7 @@ class ModelTTS(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}, {"icon": "ElevenLabs"}, {"icon": "Google"}],
         ),
         DropdownInput(
             name="model",
@@ -1220,7 +1214,7 @@ class ModelTTS(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
             show=False,
@@ -1365,9 +1359,9 @@ class ModelTTS(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
-            openai_visible = provider in ("OpenAI", "OpenAI-Compatible")
+            openai_visible = provider == "OpenAI"
             eleven_visible = provider == "ElevenLabs"
             google_visible = provider == "Google"
 
@@ -1693,17 +1687,14 @@ class TTSComponent(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
     ]
 
     TTS_MODELS_BY_PROVIDER = {
         "OpenAI": ["tts-1", "tts-1-hd"],
-        "OpenAI-Compatible": ["tts-1", "tts-1-hd"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -1714,6 +1705,7 @@ class TTSComponent(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}],
         ),
         DropdownInput(
             name="model",
@@ -1733,7 +1725,7 @@ class TTSComponent(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
             show=False,
@@ -1805,7 +1797,7 @@ class TTSComponent(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
         return build_config
 

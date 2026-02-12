@@ -39,17 +39,14 @@ class ModelVideoAnalyzer(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
     ]
 
     VIDEO_MODELS_BY_PROVIDER = {
         "OpenAI": ["gpt-4o", "gpt-4o-mini"],
-        "OpenAI-Compatible": ["gpt-4o", "gpt-4o-mini"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -60,6 +57,7 @@ class ModelVideoAnalyzer(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}],
         ),
         DropdownInput(
             name="model",
@@ -80,10 +78,10 @@ class ModelVideoAnalyzer(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
-            show=False,
+            show=True,
         ),
         TabInput(
             name="video_source",
@@ -151,7 +149,7 @@ class ModelVideoAnalyzer(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
         elif field_name == "video_source":
             source = field_value or build_config.get("video_source", {}).get("value") or "File"
@@ -480,7 +478,7 @@ class ModelVideoAnalyzer(Component):
             provider = getattr(self, "provider", "OpenAI") or "OpenAI"
             model = self._normalize_model(getattr(self, "model", "gpt-4o-mini"))
 
-            if provider in ("OpenAI", "OpenAI-Compatible"):
+            if provider == "OpenAI":
                 return self._analyze_openai(api_key, video_path, model)
 
             return {"error": f"Unsupported provider: {provider}"}

@@ -21,21 +21,18 @@ class ModelSTT(Component):
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
         "Deepgram",
         "ElevenLabs",
     ]
 
     STT_MODELS_BY_PROVIDER = {
         "OpenAI": ["whisper-1"],
-        "OpenAI-Compatible": ["whisper-1"],
         "Deepgram": ["nova-2", "nova-2-general"],
         "ElevenLabs": ["scribe_v2", "scribe_v1"],
     }
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -46,6 +43,7 @@ class ModelSTT(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}, {"icon": "Deepgram"}, {"icon": "elevenlabs"}],
         ),
         DropdownInput(
             name="model",
@@ -66,7 +64,7 @@ class ModelSTT(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
             show=False,
@@ -120,7 +118,7 @@ class ModelSTT(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
         return build_config
 
@@ -256,7 +254,7 @@ class ModelSTT(Component):
         language = getattr(self, "language", "") or ""
         prompt = getattr(self, "prompt", "") or ""
 
-        if provider in ("OpenAI", "OpenAI-Compatible"):
+        if provider == "OpenAI":
             return self._transcribe_openai(api_key, audio_path, model, language, prompt)
 
         if provider == "Deepgram":

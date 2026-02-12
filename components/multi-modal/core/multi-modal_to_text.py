@@ -52,7 +52,7 @@ from urllib.parse import urlparse
 
 
 class MultiModalInputComponent(Component):
-    display_name = "Multi-modal Input"
+    display_name = "Multi-modal to Text"
     description = "Receives audio, video, or image input and transforms it into text using AI analysis."
     icon = "repeat"
     name = "Multi-modal Input"

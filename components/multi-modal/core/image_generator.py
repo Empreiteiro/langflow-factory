@@ -22,15 +22,14 @@ class ModelImageGenerator(Component):
     description = "Generates images from text prompts using multiple providers."
     icon = "image"
     name = "ModelImageGeneratorComponent"
+    beta=True
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
-        "OpenAI-Compatible",
     ]
 
     IMAGE_MODELS_BY_PROVIDER = {
         "OpenAI": ["dall-e-3", "dall-e-2"],
-        "OpenAI-Compatible": ["dall-e-3", "dall-e-2"],
     }
 
     SIZE_BY_MODEL = {
@@ -40,7 +39,6 @@ class ModelImageGenerator(Component):
 
     BASE_URL_BY_PROVIDER = {
         "OpenAI": "https://api.openai.com/v1",
-        "OpenAI-Compatible": "https://api.openai.com/v1",
     }
 
     inputs = [
@@ -51,6 +49,7 @@ class ModelImageGenerator(Component):
             options=[*MODEL_PROVIDERS_LIST],
             value="OpenAI",
             real_time_refresh=True,
+            options_metadata=[{"icon": "OpenAI"}],
         ),
         DropdownInput(
             name="model",
@@ -71,10 +70,10 @@ class ModelImageGenerator(Component):
         StrInput(
             name="base_url",
             display_name="API Base URL",
-            info="OpenAI-compatible base URL (e.g. https://api.openai.com/v1)",
+            info="Custom API base URL (default: OpenAI). Override to use another compatible endpoint.",
             value="https://api.openai.com/v1",
             advanced=True,
-            show=False,
+            show=True,
         ),
         MessageTextInput(
             name="prompt",
@@ -128,7 +127,7 @@ class ModelImageGenerator(Component):
                 build_config["base_url"]["value"] = self.BASE_URL_BY_PROVIDER.get(
                     provider, "https://api.openai.com/v1"
                 )
-                build_config["base_url"]["show"] = provider == "OpenAI-Compatible"
+                build_config["base_url"]["show"] = provider == "OpenAI"
 
         if field_name == "model" or field_name == "provider":
             model = field_value if field_name == "model" else build_config.get("model", {}).get("value")
