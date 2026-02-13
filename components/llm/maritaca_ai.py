@@ -1,9 +1,3 @@
-"""Maritaca AI LLM component.
-
-Uses the Maritaca API (OpenAI-compatible) for chat completions with Sabiá models.
-Documentation: https://docs.maritaca.ai/pt/api/openai-compatibilidade
-"""
-
 from langchain_openai import ChatOpenAI
 from pydantic.v1 import SecretStr
 
@@ -31,7 +25,6 @@ class MaritacaAIComponent(LCModelComponent):
     documentation: str = "https://docs.maritaca.ai/pt/api/openai-compatibilidade"
     icon = "message-circle"
     name = "MaritacaAI"
-    category = "models"
 
     inputs = [
         DropdownInput(
