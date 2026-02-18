@@ -971,6 +971,7 @@ All input types inherit from `BaseInputMixin` and support these common fields:
 - `refresh_button` (bool): Show refresh button
 - `refresh_button_text` (string): Text for refresh button
 - `track_in_telemetry` (bool): Whether to track in telemetry (default varies by type)
+- `tool_mode` (bool): Used as a parameter in Tool Mode (default: `False`)
 
 ---
 
