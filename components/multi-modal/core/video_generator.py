@@ -27,6 +27,7 @@ class ModelVideoGenerator(Component):
     description = "Generates videos from text prompts using multiple providers."
     icon = "video"
     name = "ModelVideoGeneratorComponent"
+    beta = True
 
     MODEL_PROVIDERS_LIST = [
         "Google",

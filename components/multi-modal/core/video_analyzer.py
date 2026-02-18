@@ -36,6 +36,7 @@ class ModelVideoAnalyzer(Component):
     description = "Analyzes videos by extracting frames and running image analysis."
     icon = "video"
     name = "ModelVideoAnalyzerComponent"
+    beta = True
 
     MODEL_PROVIDERS_LIST = [
         "OpenAI",
@@ -420,7 +421,15 @@ class ModelVideoAnalyzer(Component):
 
     def _analyze_openai(self, api_key: str, video_path: str, model: str) -> dict:
         if not self._check_ffmpeg():
-            return {"error": "FFmpeg is required but not available in PATH."}
+            raise RuntimeError(
+                "FFmpeg is required but not available in PATH. "
+                "Please install FFmpeg: "
+                "Windows: winget install FFmpeg; "
+                "macOS: brew install ffmpeg; "
+                "Linux (Debian/Ubuntu): sudo apt update && sudo apt install ffmpeg; "
+                "Linux (RHEL/Fedora): sudo yum install ffmpeg. "
+                "More info: https://ffmpeg.org/download.html"
+            )
 
         num_frames = getattr(self, "num_frames", 3) or 3
         prompt = getattr(self, "prompt", "") or ""
