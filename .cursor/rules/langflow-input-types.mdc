@@ -687,7 +687,6 @@ A code editor input field.
 **Common Fields:**
 - `name` (required): Field name
 - `value`: Code string
-- `is_list`: Support list of code blocks
 
 **Example:**
 ```python
