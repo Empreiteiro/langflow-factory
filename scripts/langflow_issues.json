@@ -1,5 +1,265 @@
 [
     {
+        "number": 11188,
+        "title": "Smart Router cannot connect other models",
+        "state": "open",
+        "created_at": "2026-01-05T01:36:31Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "gyqls7975-beep",
+        "url": "https://github.com/langflow-ai/langflow/issues/11188"
+    },
+    {
+        "number": 11187,
+        "title": "API Request component tools mode not working",
+        "state": "open",
+        "created_at": "2026-01-04T09:49:41Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "pulkit21aug",
+        "url": "https://github.com/langflow-ai/langflow/issues/11187"
+    },
+    {
+        "number": 11184,
+        "title": "Complex flow doesn't work.",
+        "state": "open",
+        "created_at": "2026-01-02T16:32:44Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "songql",
+        "url": "https://github.com/langflow-ai/langflow/issues/11184"
+    },
+    {
+        "number": 11181,
+        "title": "Possible to create a Save or Publish button on Langflow",
+        "state": "closed",
+        "created_at": "2026-01-02T02:43:11Z",
+        "closed_at": "2026-01-03T04:31:08Z",
+        "closed_by": "andifilhohub",
+        "author": "tatwong",
+        "url": "https://github.com/langflow-ai/langflow/issues/11181"
+    },
+    {
+        "number": 11167,
+        "title": "Integrate with IBM Cloud Park for Data Virtual Data Products",
+        "state": "open",
+        "created_at": "2025-12-30T17:53:27Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "andsty",
+        "url": "https://github.com/langflow-ai/langflow/issues/11167"
+    },
+    {
+        "number": 11166,
+        "title": "Proper connector for Trino and Iceberg",
+        "state": "open",
+        "created_at": "2025-12-30T17:51:39Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "andsty",
+        "url": "https://github.com/langflow-ai/langflow/issues/11166"
+    },
+    {
+        "number": 11164,
+        "title": "Parser component not working with webhook component",
+        "state": "closed",
+        "created_at": "2025-12-30T12:08:42Z",
+        "closed_at": "2025-12-30T14:38:26Z",
+        "closed_by": "AntonioABLima",
+        "author": "pulkit21aug",
+        "url": "https://github.com/langflow-ai/langflow/issues/11164"
+    },
+    {
+        "number": 11153,
+        "title": "Empty input when using RunFlow component",
+        "state": "open",
+        "created_at": "2025-12-27T08:59:33Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "bobbydantel",
+        "url": "https://github.com/langflow-ai/langflow/issues/11153"
+    },
+    {
+        "number": 11150,
+        "title": "Custom component logging (logging, print) not appearing in server output",
+        "state": "closed",
+        "created_at": "2025-12-26T11:38:06Z",
+        "closed_at": "2025-12-26T13:20:06Z",
+        "closed_by": "xiaojuntime",
+        "author": "xiaojuntime",
+        "url": "https://github.com/langflow-ai/langflow/issues/11150"
+    },
+    {
+        "number": 11149,
+        "title": "Support for Gemini 3.0 models",
+        "state": "open",
+        "created_at": "2025-12-26T10:32:20Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "satyajit-ink",
+        "url": "https://github.com/langflow-ai/langflow/issues/11149"
+    },
+    {
+        "number": 11147,
+        "title": "Run Flow component produces incorrect actions when tool_mode is enabled",
+        "state": "open",
+        "created_at": "2025-12-26T03:35:26Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "gyqls7975-beep",
+        "url": "https://github.com/langflow-ai/langflow/issues/11147"
+    },
+    {
+        "number": 11146,
+        "title": "[Bug/Feature Request] Unable to use Other Model for 'Language Model' in Agent Component (v1.7.1)",
+        "state": "open",
+        "created_at": "2025-12-25T23:32:35Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "seanlin007",
+        "url": "https://github.com/langflow-ai/langflow/issues/11146"
+    },
+    {
+        "number": 11145,
+        "title": "starter projects can not be loaded into database",
+        "state": "open",
+        "created_at": "2025-12-25T09:44:55Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "Simonzhaohui",
+        "url": "https://github.com/langflow-ai/langflow/issues/11145"
+    },
+    {
+        "number": 11143,
+        "title": "Langflow backend service crashes if DO_NOT_TRACK is set true",
+        "state": "closed",
+        "created_at": "2025-12-24T15:19:04Z",
+        "closed_at": "2026-01-05T18:48:11Z",
+        "closed_by": "AntonioABLima",
+        "author": "santosh0705",
+        "url": "https://github.com/langflow-ai/langflow/issues/11143"
+    },
+    {
+        "number": 11139,
+        "title": "Flow build failed with \"Failed to fetch\" in v1.5.1 when using Chat Output component",
+        "state": "closed",
+        "created_at": "2025-12-23T15:02:47Z",
+        "closed_at": "2025-12-23T17:53:10Z",
+        "closed_by": "AntonioABLima",
+        "author": "Vin0sen",
+        "url": "https://github.com/langflow-ai/langflow/issues/11139"
+    },
+    {
+        "number": 11136,
+        "title": "Customer locally hosted LLM gateway provider support",
+        "state": "open",
+        "created_at": "2025-12-23T06:57:45Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "pradip-allwyn",
+        "url": "https://github.com/langflow-ai/langflow/issues/11136"
+    },
+    {
+        "number": 11135,
+        "title": "Logs panel shows “No Data Available” — no component execution logs displayed",
+        "state": "open",
+        "created_at": "2025-12-23T04:48:34Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "phennapa-saeliw",
+        "url": "https://github.com/langflow-ai/langflow/issues/11135"
+    },
+    {
+        "number": 11131,
+        "title": "Can't see vLLM bundle in the right search list",
+        "state": "open",
+        "created_at": "2025-12-22T21:05:20Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "jpramos123",
+        "url": "https://github.com/langflow-ai/langflow/issues/11131"
+    },
+    {
+        "number": 11125,
+        "title": "The ability to group notes",
+        "state": "open",
+        "created_at": "2025-12-22T05:44:16Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "MustafaDUT",
+        "url": "https://github.com/langflow-ai/langflow/issues/11125"
+    },
+    {
+        "number": 11121,
+        "title": "Ollama embedding component does not show the model listed",
+        "state": "open",
+        "created_at": "2025-12-21T10:18:07Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "pulkit21aug",
+        "url": "https://github.com/langflow-ai/langflow/issues/11121"
+    },
+    {
+        "number": 11120,
+        "title": "Groq Component : error to fetch models LLM",
+        "state": "open",
+        "created_at": "2025-12-21T08:42:35Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "Anthony-Perriolat",
+        "url": "https://github.com/langflow-ai/langflow/issues/11120"
+    },
+    {
+        "number": 11119,
+        "title": "LANGFLOW_VARIABLES_TO_GET_FROM_ENVIRONMENT are not initialized until Superuser login (Blocking Backend-only deployments)",
+        "state": "open",
+        "created_at": "2025-12-20T10:33:11Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "Hyedryn",
+        "url": "https://github.com/langflow-ai/langflow/issues/11119"
+    },
+    {
+        "number": 11118,
+        "title": "Langflow output component not showing  the image generated by jigsaw bundle",
+        "state": "closed",
+        "created_at": "2025-12-20T09:41:48Z",
+        "closed_at": "2025-12-23T18:43:05Z",
+        "closed_by": "Empreiteiro",
+        "author": "pulkit21aug",
+        "url": "https://github.com/langflow-ai/langflow/issues/11118"
+    },
+    {
+        "number": 11115,
+        "title": "Langflow Desktop 1.6.0 is failing to start up",
+        "state": "open",
+        "created_at": "2025-12-19T17:48:13Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "bart-bilski",
+        "url": "https://github.com/langflow-ai/langflow/issues/11115"
+    },
+    {
+        "number": 11106,
+        "title": "Use Global Variables in MCP config Environment Variables",
+        "state": "open",
+        "created_at": "2025-12-19T10:56:43Z",
+        "closed_at": null,
+        "closed_by": null,
+        "author": "maiyad-sia",
+        "url": "https://github.com/langflow-ai/langflow/issues/11106"
+    },
+    {
+        "number": 11104,
+        "title": "Request for update on previously submitted security advisory",
+        "state": "closed",
+        "created_at": "2025-12-19T03:28:17Z",
+        "closed_at": "2025-12-19T15:21:55Z",
+        "closed_by": "jordanrfrazier",
+        "author": "imraax",
+        "url": "https://github.com/langflow-ai/langflow/issues/11104"
+    },
+    {
         "number": 11086,
         "title": "Assisted Component Coding",
         "state": "open",
@@ -242,20 +502,20 @@
     {
         "number": 11036,
         "title": "Langflow-ide helm not working with traefik",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-12-16T11:26:50Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-29T16:51:48Z",
+        "closed_by": "andifilhohub",
         "author": "Rhiod",
         "url": "https://github.com/langflow-ai/langflow/issues/11036"
     },
     {
         "number": 11024,
         "title": "503 DNS resolution failed",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-12-15T16:56:39Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-29T22:40:24Z",
+        "closed_by": "andifilhohub",
         "author": "jypucca",
         "url": "https://github.com/langflow-ai/langflow/issues/11024"
     },
@@ -282,10 +542,10 @@
     {
         "number": 10987,
         "title": "Network error. Please check the connection to the server. Random connection drop while performing a flow (k8s)",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-12-12T09:22:29Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-29T07:04:03Z",
+        "closed_by": "joazker-bit",
         "author": "joazker-bit",
         "url": "https://github.com/langflow-ai/langflow/issues/10987"
     },
@@ -482,10 +742,10 @@
     {
         "number": 10801,
         "title": "Supporting self hosted firecrawl",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-12-01T03:40:56Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-18T19:06:32Z",
+        "closed_by": "Empreiteiro",
         "author": "ZYMCao",
         "url": "https://github.com/langflow-ai/langflow/issues/10801"
     },
@@ -522,10 +782,10 @@
     {
         "number": 10753,
         "title": "Docling  libGL.so.1 error",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-27T10:27:23Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-18T18:16:43Z",
+        "closed_by": "andifilhohub",
         "author": "guyver30",
         "url": "https://github.com/langflow-ai/langflow/issues/10753"
     },
@@ -535,7 +795,7 @@
         "state": "open",
         "created_at": "2025-11-26T11:58:02Z",
         "closed_at": null,
-        "closed_by": null,
+        "closed_by": "AntonioABLima",
         "author": "aleformi",
         "url": "https://github.com/langflow-ai/langflow/issues/10734"
     },
@@ -545,7 +805,7 @@
         "state": "open",
         "created_at": "2025-11-26T11:56:11Z",
         "closed_at": null,
-        "closed_by": null,
+        "closed_by": "Empreiteiro",
         "author": "tamil3210",
         "url": "https://github.com/langflow-ai/langflow/issues/10733"
     },
@@ -592,20 +852,20 @@
     {
         "number": 10717,
         "title": "Add support for Ant Bailin models (1B free tokens/month)",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-25T09:16:49Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-22T18:08:31Z",
+        "closed_by": "AntonioABLima",
         "author": "blackboya",
         "url": "https://github.com/langflow-ai/langflow/issues/10717"
     },
     {
         "number": 10715,
         "title": "I'd like to contribute a new provider for Bailing AI models to the AI SDK.",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-25T06:16:07Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-22T17:58:35Z",
+        "closed_by": "AntonioABLima",
         "author": "Qianqian117",
         "url": "https://github.com/langflow-ai/langflow/issues/10715"
     },
@@ -932,10 +1192,10 @@
     {
         "number": 10594,
         "title": "progressive browser memory growth",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-14T09:16:55Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-29T23:20:53Z",
+        "closed_by": "andifilhohub",
         "author": "ZhangTomLiang",
         "url": "https://github.com/langflow-ai/langflow/issues/10594"
     },
@@ -962,10 +1222,10 @@
     {
         "number": 10584,
         "title": "LangChain agent components  drops response connection with chat output",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-13T14:29:38Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-22T14:01:47Z",
+        "closed_by": "andifilhohub",
         "author": "joazker-bit",
         "url": "https://github.com/langflow-ai/langflow/issues/10584"
     },
@@ -1142,20 +1402,20 @@
     {
         "number": 10483,
         "title": "Run workflow failed",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-03T05:26:41Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-18T18:38:15Z",
+        "closed_by": "andifilhohub",
         "author": "SnowsonZ",
         "url": "https://github.com/langflow-ai/langflow/issues/10483"
     },
     {
         "number": 10482,
         "title": "Issue: Error inserting record into transaction table due to NaN value in JSON",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-11-03T05:14:25Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-29T23:20:37Z",
+        "closed_by": "andifilhohub",
         "author": "SnowsonZ",
         "url": "https://github.com/langflow-ai/langflow/issues/10482"
     },
@@ -1222,10 +1482,10 @@
     {
         "number": 10463,
         "title": "[BUG] Openrouter component throws an error while loading model providers",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-10-31T11:46:17Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-22T13:45:55Z",
+        "closed_by": "daniellicnerski1",
         "author": "IgriGGG",
         "url": "https://github.com/langflow-ai/langflow/issues/10463"
     },
@@ -1442,10 +1702,10 @@
     {
         "number": 10393,
         "title": "Make sticky notes more useful for documentation inside flows",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-10-24T08:38:01Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-20T23:54:56Z",
+        "closed_by": "AntonioABLima",
         "author": "ochosi",
         "url": "https://github.com/langflow-ai/langflow/issues/10393"
     },
@@ -1576,7 +1836,7 @@
         "created_at": "2025-10-21T14:10:01Z",
         "closed_at": "2025-11-03T16:16:18Z",
         "closed_by": "andifilhohub",
-        "author": "SunBriad",
+        "author": "niupTang",
         "url": "https://github.com/langflow-ai/langflow/issues/10346"
     },
     {
@@ -1592,10 +1852,10 @@
     {
         "number": 10335,
         "title": "Add support fort vLLM with custom URL",
-        "state": "open",
+        "state": "closed",
         "created_at": "2025-10-20T13:16:35Z",
-        "closed_at": null,
-        "closed_by": null,
+        "closed_at": "2025-12-22T12:56:16Z",
+        "closed_by": "AntonioABLima",
         "author": "jpramos123",
         "url": "https://github.com/langflow-ai/langflow/issues/10335"
     },
@@ -2148,195 +2408,5 @@
         "closed_by": "msmygit",
         "author": "msmygit",
         "url": "https://github.com/langflow-ai/langflow/issues/10164"
-    },
-    {
-        "number": 10162,
-        "title": "Agent with Postgres component",
-        "state": "open",
-        "created_at": "2025-10-07T19:41:31Z",
-        "closed_at": null,
-        "closed_by": null,
-        "author": "andsty",
-        "url": "https://github.com/langflow-ai/langflow/issues/10162"
-    },
-    {
-        "number": 10161,
-        "title": "Connection Error when building \"Agent\" Component with on-premises AI due to SSL fail",
-        "state": "closed",
-        "created_at": "2025-10-07T18:59:19Z",
-        "closed_at": "2025-10-09T18:04:00Z",
-        "closed_by": "lice-reis",
-        "author": "sai1274",
-        "url": "https://github.com/langflow-ai/langflow/issues/10161"
-    },
-    {
-        "number": 10155,
-        "title": "Getting error sometimes when executing an agent flow",
-        "state": "open",
-        "created_at": "2025-10-07T14:45:16Z",
-        "closed_at": null,
-        "closed_by": null,
-        "author": "andsty",
-        "url": "https://github.com/langflow-ai/langflow/issues/10155"
-    },
-    {
-        "number": 10147,
-        "title": "Unable to upgrade? 1.5.14 Your version 1.6.0 Latest",
-        "state": "closed",
-        "created_at": "2025-10-07T03:15:18Z",
-        "closed_at": "2025-10-07T18:41:00Z",
-        "closed_by": "Empreiteiro",
-        "author": "dewrightca",
-        "url": "https://github.com/langflow-ai/langflow/issues/10147"
-    },
-    {
-        "number": 10145,
-        "title": "Agent fails to return a response when using Groq as Language Model",
-        "state": "closed",
-        "created_at": "2025-10-06T20:37:31Z",
-        "closed_at": "2025-11-21T18:52:56Z",
-        "closed_by": "Victor-w-Madeira",
-        "author": "Victor-w-Madeira",
-        "url": "https://github.com/langflow-ai/langflow/issues/10145"
-    },
-    {
-        "number": 10133,
-        "title": "File download broken: api/v2/files/<file-id> always returns error 500",
-        "state": "closed",
-        "created_at": "2025-10-06T17:19:55Z",
-        "closed_at": "2025-10-13T09:46:13Z",
-        "closed_by": "codalf",
-        "author": "codalf",
-        "url": "https://github.com/langflow-ai/langflow/issues/10133"
-    },
-    {
-        "number": 10122,
-        "title": "File upload path duplication bug: Langflow searches for files in \"app/langflow/app/langflow/\" but files are stored in \"app/app/langflow/\"",
-        "state": "open",
-        "created_at": "2025-10-06T11:41:00Z",
-        "closed_at": null,
-        "closed_by": null,
-        "author": "MustafaDUT",
-        "url": "https://github.com/langflow-ai/langflow/issues/10122"
-    },
-    {
-        "number": 10121,
-        "title": "Langflow Startup Error",
-        "state": "closed",
-        "created_at": "2025-10-06T01:08:03Z",
-        "closed_at": "2025-11-21T21:15:44Z",
-        "closed_by": "Victor-w-Madeira",
-        "author": "CHuiV123",
-        "url": "https://github.com/langflow-ai/langflow/issues/10121"
-    },
-    {
-        "number": 10119,
-        "title": "Running Latest Langflow 1.6 flow component in another flow error",
-        "state": "closed",
-        "created_at": "2025-10-05T08:27:14Z",
-        "closed_at": "2025-12-17T14:13:34Z",
-        "closed_by": "Empreiteiro",
-        "author": "andsty",
-        "url": "https://github.com/langflow-ai/langflow/issues/10119"
-    },
-    {
-        "number": 10118,
-        "title": "Hosting langflow in IIS",
-        "state": "closed",
-        "created_at": "2025-10-04T14:18:34Z",
-        "closed_at": "2025-10-06T23:22:18Z",
-        "closed_by": "andifilhohub",
-        "author": "Arin1599",
-        "url": "https://github.com/langflow-ai/langflow/issues/10118"
-    },
-    {
-        "number": 10102,
-        "title": "Is Bundle contribution documentation outdated?",
-        "state": "closed",
-        "created_at": "2025-10-03T12:18:12Z",
-        "closed_at": "2025-10-13T17:21:26Z",
-        "closed_by": "andifilhohub",
-        "author": "AlexanderSlav",
-        "url": "https://github.com/langflow-ai/langflow/issues/10102"
-    },
-    {
-        "number": 10101,
-        "title": "Session-based file upload not working in v1.6.0 - FileNotFoundError with duplicate app/langflow path",
-        "state": "open",
-        "created_at": "2025-10-03T12:05:40Z",
-        "closed_at": null,
-        "closed_by": null,
-        "author": "MustafaDUT",
-        "url": "https://github.com/langflow-ai/langflow/issues/10101"
-    },
-    {
-        "number": 10087,
-        "title": "Removed custom LLM option from agent component",
-        "state": "closed",
-        "created_at": "2025-10-02T09:37:58Z",
-        "closed_at": "2025-10-02T13:21:41Z",
-        "closed_by": "Empreiteiro",
-        "author": "RobRead84",
-        "url": "https://github.com/langflow-ai/langflow/issues/10087"
-    },
-    {
-        "number": 10086,
-        "title": "How to add new outputs in Langflow Custom Component via `update_build_config`",
-        "state": "closed",
-        "created_at": "2025-10-02T08:11:01Z",
-        "closed_at": "2025-10-02T12:54:10Z",
-        "closed_by": "Empreiteiro",
-        "author": "FILM6912",
-        "url": "https://github.com/langflow-ai/langflow/issues/10086"
-    },
-    {
-        "number": 10085,
-        "title": "Not able to install - setup failed",
-        "state": "closed",
-        "created_at": "2025-10-02T05:07:08Z",
-        "closed_at": "2025-10-03T21:25:43Z",
-        "closed_by": "Cristhianzl",
-        "author": "avi2000",
-        "url": "https://github.com/langflow-ai/langflow/issues/10085"
-    },
-    {
-        "number": 10082,
-        "title": "robotchat",
-        "state": "closed",
-        "created_at": "2025-10-02T02:25:36Z",
-        "closed_at": "2025-10-02T12:54:03Z",
-        "closed_by": "carlosrcoelho",
-        "author": "cebrail-ugur",
-        "url": "https://github.com/langflow-ai/langflow/issues/10082"
-    },
-    {
-        "number": 10080,
-        "title": "Bug: Error building Component Astra DB Graph",
-        "state": "open",
-        "created_at": "2025-10-02T01:45:02Z",
-        "closed_at": null,
-        "closed_by": null,
-        "author": "harpersamueljames-blip",
-        "url": "https://github.com/langflow-ai/langflow/issues/10080"
-    },
-    {
-        "number": 10059,
-        "title": "Continuously having errors on starting up with 1.6.0",
-        "state": "closed",
-        "created_at": "2025-10-01T09:41:28Z",
-        "closed_at": "2025-10-22T15:13:46Z",
-        "closed_by": "beltonk",
-        "author": "beltonk",
-        "url": "https://github.com/langflow-ai/langflow/issues/10059"
-    },
-    {
-        "number": 10058,
-        "title": "Langflow 1.6.0 - Error importing module langflow.components.composio.googletasks_composio: No module named 'base'",
-        "state": "closed",
-        "created_at": "2025-10-01T09:28:39Z",
-        "closed_at": "2025-11-25T14:20:26Z",
-        "closed_by": "HzaRashid",
-        "author": "chughts",
-        "url": "https://github.com/langflow-ai/langflow/issues/10058"
     }
 ]
