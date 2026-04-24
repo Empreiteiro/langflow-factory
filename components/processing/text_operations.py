@@ -2,8 +2,8 @@ import pandas as pd
 import re
 from typing import Any, List, Dict
 
-from langflow.custom import Component
-from langflow.inputs import (
+from lfx.custom import Component
+from lfx.inputs import (
     BoolInput,
     DropdownInput,
     IntInput,
@@ -11,42 +11,13 @@ from langflow.inputs import (
     SortableListInput,
     StrInput,
 )
-from langflow.io import Output
-from langflow.schema.data import Data
-from langflow.schema.dataframe import DataFrame
-from langflow.schema.message import Message
+from lfx.io import Output
+from lfx.schema.data import Data
+from lfx.schema.dataframe import DataFrame
+from lfx.schema.message import Message
 
 
 class TextOperations(Component):
-    """Text Operations Component
-
-    This component provides various text processing operations including
-    text-to-DataFrame conversion, text analysis, and text transformations.
-
-    ## Features
-    - **Text to DataFrame**: Convert formatted text tables to DataFrames
-    - **Text Analysis**: Count words, characters, lines, etc.
-    - **Text Transformations**: Case conversion, trimming, replacement
-    - **Text Extraction**: Extract specific patterns or sections
-    - **Text Head/Tail**: Extract characters from beginning or end
-    - **Text Stripping**: Remove whitespace or characters from edges
-    - **Text Formatting**: Format text with various options
-
-    ## Operations Available
-    - **Text to DataFrame**: Parse markdown-style tables into DataFrames
-    - **Word Count**: Count words, characters, lines in text
-    - **Case Conversion**: Convert to uppercase, lowercase, title case
-    - **Text Replace**: Replace text patterns with new values
-    - **Text Extract**: Extract text matching patterns
-    - **Text Head**: Extract characters from the beginning of text
-    - **Text Tail**: Extract characters from the end of text
-    - **Text Strip**: Remove whitespace or specific characters from edges
-    - **Text Format**: Format text with padding, alignment, etc.
-    - **Text Split**: Split text into parts based on delimiters
-    - **Text Join**: Join text parts with separators
-    - **Text Clean**: Remove extra whitespace, special characters
-    """
-
     display_name = "Text Operations"
     description = "Perform various text processing operations including text-to-DataFrame conversion."
     icon = "type"
@@ -347,6 +318,9 @@ class TextOperations(Component):
             elif operation_name == "Text Join":
                 frontend_node["outputs"].append(
                     Output(display_name="Text", name="text", method="get_text")
+                )
+                frontend_node["outputs"].append(
+                    Output(display_name="Message", name="message", method="get_message")
                 )
             
             # Add Message output for all operations except Word Count, Text to DataFrame, and Text Join
@@ -708,8 +682,8 @@ class TextOperations(Component):
         # For all other operations, return empty DataFrame
         return DataFrame(pd.DataFrame())
 
-    def get_text(self) -> str:
-        """Return result as text - for text operations only."""
+    def get_text(self) -> Message:
+        """Return result as Message - for text operations only."""
         operation = self.get_operation_name()
         
         # Text operations that should return text
@@ -723,11 +697,12 @@ class TextOperations(Component):
             result = self.process_text()
             if result is not None:
                 if isinstance(result, list):
-                    return '\n'.join(str(item) for item in result)
+                    message_text = '\n'.join(str(item) for item in result)
                 else:
-                    return str(result)
+                    message_text = str(result)
+                return Message(text=message_text)
         
-        return ""
+        return Message(text="")
 
     def get_data(self) -> Data:
         """Return result as Data object - only for Word Count operation."""
