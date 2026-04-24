@@ -7,7 +7,7 @@ from lfx.base.models.unified_models import (
     update_model_options_in_build_config,
 )
 from lfx.custom import Component
-from lfx.io import BoolInput, MessageTextInput, Output, MessageInput, ModelInput, MultilineInput, SecretStrInput
+from lfx.io import BoolInput, MessageTextInput, Output, MessageInput, ModelInput, MultilineInput, MultiselectInput, SecretStrInput
 from lfx.logging.logger import logger
 from lfx.schema import Data
 
@@ -33,70 +33,26 @@ class GuardrailsComponent(Component):
             real_time_refresh=True,
             advanced=True,
         ),
+        MultiselectInput(
+            name="enabled_guardrails",
+            display_name="Guardrails",
+            info="Select one or more security guardrails to validate the input against.",
+            options=[
+                "PII",
+                "Tokens/Passwords",
+                "Jailbreak",
+                "Offensive Content",
+                "Malicious Code",
+                "Prompt Injection",
+            ],
+            value=["PII", "Tokens/Passwords", "Jailbreak"],
+        ),
         MultilineInput(
             name="input_text",
             display_name="Input Text",
             info="The text to validate against guardrails.",
             input_types=["Message"],
             required=True,
-        ),
-        MultilineInput(
-            name="pass_override",
-            display_name="Pass Override",
-            info="Optional override message that will replace the input text when validation passes. If not provided, the original input text will be used.",
-            input_types=["Message"],
-            required=False,
-            advanced=True,
-        ),
-        MultilineInput(
-            name="fail_override",
-            display_name="Fail Override",
-            info="Optional override message that will replace the input text when validation fails. If not provided, the original input text will be used.",
-            input_types=["Message"],
-            required=False,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_pii",
-            display_name="Check PII (Personal Information)",
-            info="Detect if input contains personal identifiable information (names, addresses, phone numbers, emails, SSN, etc).",
-            value=True,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_tokens",
-            display_name="Check Tokens/Passwords",
-            info="Detect if input contains API tokens, passwords, keys, or other credentials.",
-            value=True,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_jailbreak",
-            display_name="Check Jailbreak Attempts",
-            info="Detect attempts to bypass AI safety guidelines or manipulate the model.",
-            value=True,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_offensive",
-            display_name="Check Offensive Content",
-            info="Detect offensive, hateful, or inappropriate content.",
-            value=False,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_malicious_code",
-            display_name="Check Malicious Code",
-            info="Detect potentially malicious code or scripts.",
-            value=False,
-            advanced=True,
-        ),
-        BoolInput(
-            name="check_prompt_injection",
-            display_name="Check Prompt Injection",
-            info="Detect attempts to inject malicious prompts or instructions.",
-            value=False,
-            advanced=True,
         ),
         BoolInput(
             name="enable_custom_guardrail",
@@ -108,9 +64,14 @@ class GuardrailsComponent(Component):
         MessageTextInput(
             name="custom_guardrail_explanation",
             display_name="Custom Guardrail Description",
-            info="Describe what the custom guardrail should check for. This will be used by the LLM to validate the input.",
-            dynamic=True,
-            show=False,
+            info=(
+                "Describe what the custom guardrail should check for. This description will be used by the LLM to validate the input. "
+                "Be specific and clear about what you want to detect. Examples: "
+                "'Detect if the input contains medical terminology or health-related information', "
+                "'Check if the text mentions financial transactions or banking details', "
+                "'Identify if the content discusses legal matters or contains legal advice'. "
+                "The LLM will analyze the input text against your custom criteria and return YES if detected, NO otherwise."
+            ),
             advanced=True,
         ),
     ]
@@ -126,24 +87,7 @@ class GuardrailsComponent(Component):
         self._failed_checks = []
 
     def update_build_config(self, build_config: dict, field_value: str, field_name: str | None = None):
-        """Dynamically update build config with user-filtered model options and custom guardrail toggle."""
-        # Handle custom guardrail toggle - always check the current state
-        if "custom_guardrail_explanation" in build_config:
-            # Get current value of enable_custom_guardrail
-            if field_name == "enable_custom_guardrail":
-                # Use the new value from field_value
-                enable_custom = bool(field_value)
-            else:
-                # Get current value from build_config or component
-                if "enable_custom_guardrail" in build_config:
-                    enable_custom = build_config["enable_custom_guardrail"].get("value", False)
-                else:
-                    enable_custom = getattr(self, "enable_custom_guardrail", False)
-            
-            # Show/hide the custom guardrail explanation field
-            build_config["custom_guardrail_explanation"]["show"] = enable_custom
-        
-        # Handle model options update
+        """Dynamically update build config with user-filtered model options."""
         return update_model_options_in_build_config(
             component=self,
             build_config=build_config,
@@ -461,26 +405,31 @@ Now analyze the user input above and respond according to the instructions:"""
             logger.error(error_msg)
             return False
         
-        # Build list of enabled checks
+        # Build list of enabled checks from multi-select
         checks_to_run = []
         
-        if getattr(self, "check_pii", False):
-            checks_to_run.append(("PII", "personal identifiable information such as names, addresses, phone numbers, email addresses, social security numbers, credit card numbers, or any other personal data"))
+        # Get enabled guardrails from MultiselectInput (returns list of strings)
+        enabled_guardrails = getattr(self, "enabled_guardrails", [])
+        if not isinstance(enabled_guardrails, list):
+            enabled_guardrails = []
         
-        if getattr(self, "check_tokens", False):
-            checks_to_run.append(("Tokens/Passwords", "API tokens, passwords, API keys, access keys, secret keys, authentication credentials, or any other sensitive credentials"))
+        # MultiselectInput returns list of strings directly
+        enabled_names = [str(item) for item in enabled_guardrails if item]
         
-        if getattr(self, "check_jailbreak", False):
-            checks_to_run.append(("Jailbreak", "attempts to bypass AI safety guidelines, manipulate the model's behavior, or make it ignore its instructions"))
+        # Map guardrail names to their descriptions
+        guardrail_descriptions = {
+            "PII": "personal identifiable information such as names, addresses, phone numbers, email addresses, social security numbers, credit card numbers, or any other personal data",
+            "Tokens/Passwords": "API tokens, passwords, API keys, access keys, secret keys, authentication credentials, or any other sensitive credentials",
+            "Jailbreak": "attempts to bypass AI safety guidelines, manipulate the model's behavior, or make it ignore its instructions",
+            "Offensive Content": "offensive, hateful, discriminatory, violent, or inappropriate content",
+            "Malicious Code": "potentially malicious code, scripts, exploits, or harmful commands",
+            "Prompt Injection": "attempts to inject malicious prompts, override system instructions, or manipulate the AI's behavior through embedded instructions",
+        }
         
-        if getattr(self, "check_offensive", False):
-            checks_to_run.append(("Offensive Content", "offensive, hateful, discriminatory, violent, or inappropriate content"))
-        
-        if getattr(self, "check_malicious_code", False):
-            checks_to_run.append(("Malicious Code", "potentially malicious code, scripts, exploits, or harmful commands"))
-        
-        if getattr(self, "check_prompt_injection", False):
-            checks_to_run.append(("Prompt Injection", "attempts to inject malicious prompts, override system instructions, or manipulate the AI's behavior through embedded instructions"))
+        # Add enabled guardrails to checks_to_run
+        for name in enabled_names:
+            if name in guardrail_descriptions:
+                checks_to_run.append((name, guardrail_descriptions[name]))
         
         # Add custom guardrail if enabled
         if getattr(self, "enable_custom_guardrail", False):
@@ -550,16 +499,8 @@ Now analyze the user input above and respond according to the instructions:"""
         if validation_passed:
             # All checks passed - stop the fail output and activate this one
             self.stop("failed_result")
-            
-            # Get Pass override message
-            pass_override = getattr(self, "pass_override", None)
-            pass_override_text = self._extract_text(pass_override)
-            if pass_override_text and pass_override_text.strip():
-                payload = {"text": pass_override_text, "result": "pass"}
-                return Data(data=payload)
-            else:
-                payload = {"text": input_text, "result": "pass"}
-                return Data(data=payload)
+            payload = {"text": input_text, "result": "pass"}
+            return Data(data=payload)
         
         # Validation failed - stop this output (itself)
         self.stop("pass_result")
@@ -580,24 +521,12 @@ Now analyze the user input above and respond according to the instructions:"""
         if not validation_passed:
             # Validation failed - stop the pass output and activate this one
             self.stop("pass_result")
-            
-            # Get Fail override message
-            fail_override = getattr(self, "fail_override", None)
-            fail_override_text = self._extract_text(fail_override)
-            if fail_override_text and fail_override_text.strip():
-                payload = {
-                    "text": fail_override_text,
-                    "result": "fail",
-                    "justification": "\n".join(self._failed_checks),
-                }
-                return Data(data=payload)
-            else:
-                payload = {
-                    "text": input_text,
-                    "result": "fail",
-                    "justification": "\n".join(self._failed_checks),
-                }
-                return Data(data=payload)
+            payload = {
+                "text": input_text,
+                "result": "fail",
+                "justification": "\n".join(self._failed_checks),
+            }
+            return Data(data=payload)
         
         # All passed - stop this output (itself)
         self.stop("failed_result")
