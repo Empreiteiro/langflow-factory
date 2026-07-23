@@ -1,39 +1,56 @@
+"""Unified Operations component.
+
+Brings together the previously separate JSON, Table, and Text operation
+components into a single component. An "Input Type" selector (Text / JSON /
+Table) drives everything: it filters the "Operation" picker to the operations
+that apply to that type, reveals the matching input (Text / JSON / Table) and
+its operation-specific fields, and advertises the appropriate output type.
+
+The three original components (JSON Operations, Table Operations, Text
+Operations) remain available as legacy components for backward compatibility
+with existing flows.
+"""
+
 import ast
 import contextlib
 import json
 import re
 from typing import TYPE_CHECKING, Any
 
-import jq
 import pandas as pd
 from json_repair import repair_json
 
 from lfx.custom import Component
 from lfx.field_typing import RangeSpec
-from lfx.inputs import (
+from lfx.inputs import DictInput, SortableListInput, TabInput
+from lfx.io import (
     BoolInput,
-    DictInput,
+    DataFrameInput,
+    DataInput,
     DropdownInput,
-    HandleInput,
     IntInput,
     MessageTextInput,
     MultilineInput,
-    SortableListInput,
+    Output,
     StrInput,
-    TabInput,
 )
-from lfx.io import DataFrameInput, DataInput, Output
 from lfx.log.logger import logger
 from lfx.schema import Data
 from lfx.schema.dataframe import DataFrame
+from lfx.schema.dotdict import dotdict
 from lfx.schema.message import Message
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+# The "Input Type" selector tabs. Each value maps a Langflow data type to the
+# operations, input, and output that belong to it.
+INPUT_TYPES = ["Text", "JSON", "Table"]
 
-# Operation registry: maps operation name to its configuration
-OPERATIONS_BY_TYPE = {
+# Operations grouped by input type, in display order, each with the icon shown
+# in the Operation picker. This is the single source of truth for the picker;
+# update_build_config swaps the picker's options to the selected type's list.
+OPERATIONS_BY_TYPE: dict[str, list[dict[str, str]]] = {
     "Text": [
         {"name": "Word Count", "icon": "hash"},
         {"name": "Case Conversion", "icon": "type"},
@@ -46,128 +63,45 @@ OPERATIONS_BY_TYPE = {
         {"name": "Text Clean", "icon": "sparkles"},
         {"name": "Text to DataFrame", "icon": "table"},
     ],
-    "Data": [
+    "JSON": [
         {"name": "Select Keys", "icon": "lasso-select"},
         {"name": "Literal Eval", "icon": "braces"},
         {"name": "Combine", "icon": "merge"},
-        {"name": "Filter Values", "icon": "filter"},
         {"name": "Append or Update", "icon": "circle-plus"},
         {"name": "Remove Keys", "icon": "eraser"},
         {"name": "Rename Keys", "icon": "pencil-line"},
         {"name": "Path Selection", "icon": "mouse-pointer"},
         {"name": "JQ Expression", "icon": "terminal"},
     ],
-    "DataFrame": [
+    "Table": [
         {"name": "Add Column", "icon": "plus"},
+        {"name": "Concatenate", "icon": "combine"},
         {"name": "Drop Column", "icon": "minus"},
-        {"name": "Filter Rows", "icon": "filter"},
-        {"name": "Head Rows", "icon": "arrow-up"},
+        {"name": "Filter", "icon": "filter"},
+        {"name": "Head", "icon": "arrow-up"},
+        {"name": "Merge", "icon": "merge"},
         {"name": "Rename Column", "icon": "pencil"},
         {"name": "Replace Value", "icon": "replace"},
         {"name": "Select Columns", "icon": "columns"},
         {"name": "Sort", "icon": "arrow-up-down"},
-        {"name": "Tail Rows", "icon": "arrow-down"},
+        {"name": "Tail", "icon": "arrow-down"},
         {"name": "Drop Duplicates", "icon": "copy-x"},
     ],
 }
 
-# Fields required for each operation
-OPERATION_FIELDS = {
-    # Text operations
-    "Word Count": ["text_input", "count_words", "count_characters", "count_lines"],
-    "Case Conversion": ["text_input", "case_type"],
-    "Text Replace": ["text_input", "search_pattern", "replacement_text", "use_regex"],
-    "Text Extract": ["text_input", "extract_pattern", "max_matches"],
-    "Text Head": ["text_input", "head_characters"],
-    "Text Tail": ["text_input", "tail_characters"],
-    "Text Strip": ["text_input", "strip_mode", "strip_characters"],
-    "Text Join": ["text_input", "text_input_2"],
-    "Text Clean": ["text_input", "remove_extra_spaces", "remove_special_chars", "remove_empty_lines"],
-    "Text to DataFrame": ["text_input", "table_separator", "has_header"],
-    # Data operations
-    "Select Keys": ["data_input", "select_keys_input"],
-    "Literal Eval": ["data_input"],
-    "Combine": ["data_input"],
-    "Filter Values": ["data_input", "filter_key", "operator", "filter_values"],
-    "Append or Update": ["data_input", "append_update_data"],
-    "Remove Keys": ["data_input", "remove_keys_input"],
-    "Rename Keys": ["data_input", "rename_keys_input"],
-    "Path Selection": ["data_input", "mapped_json_display", "selected_key"],
-    "JQ Expression": ["data_input", "query"],
-    # DataFrame operations
-    "Add Column": ["df_input", "new_column_name", "new_column_value"],
-    "Drop Column": ["df_input", "column_name"],
-    "Filter Rows": ["df_input", "column_name", "filter_value", "filter_operator"],
-    "Head Rows": ["df_input", "num_rows"],
-    "Rename Column": ["df_input", "column_name", "new_column_name"],
-    "Replace Value": ["df_input", "column_name", "replace_value", "replacement_value"],
-    "Select Columns": ["df_input", "columns_to_select"],
-    "Sort": ["df_input", "column_name", "ascending"],
-    "Tail Rows": ["df_input", "num_rows"],
-    "Drop Duplicates": ["df_input", "column_name"],
-}
+# Operation-name sets derived from the picker, used for dispatch and output
+# routing. Keeping them derived from OPERATIONS_BY_TYPE avoids any drift.
+JSON_OPERATIONS = {op["name"] for op in OPERATIONS_BY_TYPE["JSON"]}
+TABLE_OPERATIONS = {op["name"] for op in OPERATIONS_BY_TYPE["Table"]}
+TEXT_OPERATIONS = {op["name"] for op in OPERATIONS_BY_TYPE["Text"]}
 
-# All dynamic fields that can be shown/hidden
-ALL_DYNAMIC_FIELDS = [
-    # Input fields
-    "text_input",
-    "data_input",
-    "df_input",
-    # Text operation fields
-    "table_separator",
-    "has_header",
-    "count_words",
-    "count_characters",
-    "count_lines",
-    "case_type",
-    "search_pattern",
-    "replacement_text",
-    "use_regex",
-    "extract_pattern",
-    "max_matches",
-    "head_characters",
-    "tail_characters",
-    "strip_mode",
-    "strip_characters",
-    "text_input_2",
-    "remove_extra_spaces",
-    "remove_special_chars",
-    "remove_empty_lines",
-    # Data operation fields
-    "select_keys_input",
-    "filter_key",
-    "operator",
-    "filter_values",
-    "append_update_data",
-    "remove_keys_input",
-    "rename_keys_input",
-    "mapped_json_display",
-    "selected_key",
-    "query",
-    # DataFrame operation fields
-    "column_name",
-    "filter_value",
-    "filter_operator",
-    "ascending",
-    "new_column_name",
-    "new_column_value",
-    "columns_to_select",
-    "num_rows",
-    "replace_value",
-    "replacement_value",
-]
+# Each input type maps to its main input field and its default output. "Text"
+# normally outputs a Message; "JSON" a Data; "Table" a DataFrame. A few text
+# operations override this (Word Count -> Data, Text to DataFrame -> DataFrame).
+INPUT_TYPE_TO_MAIN_INPUT = {"Text": "text_input", "JSON": "data", "Table": "df"}
 
-# Data operations comparison operators
-DATA_OPERATORS = {
-    "equals": lambda a, b: str(a) == str(b),
-    "not equals": lambda a, b: str(a) != str(b),
-    "contains": lambda a, b: str(b) in str(a),
-    "starts with": lambda a, b: str(a).startswith(str(b)),
-    "ends with": lambda a, b: str(a).endswith(str(b)),
-}
-
-# Case converters for text operations
-CASE_CONVERTERS = {
+# Case conversions for the Text "Case Conversion" operation.
+CASE_CONVERTERS: dict[str, Any] = {
     "uppercase": str.upper,
     "lowercase": str.lower,
     "title": str.title,
@@ -176,48 +110,376 @@ CASE_CONVERTERS = {
 }
 
 
-class Operations(Component):
-    """Unified component for Text, Data, and DataFrame operations."""
-
+class OperationsComponent(Component):
     display_name = "Operations"
-    description = "Perform various operations on Text, Data, or DataFrame inputs."
-    icon = "workflow"
+    description = "Perform operations on Text, JSON, and Tables from a single component."
+    documentation: str = "https://docs.langflow.org/components-processing#operations"
+    icon = "wand-sparkles"
     name = "Operations"
+    metadata = {
+        "keywords": [
+            "operations",
+            "data operations",
+            "json",
+            "json operations",
+            "table",
+            "table operations",
+            "dataframe",
+            "dataframe operations",
+            "text",
+            "text operations",
+            "select keys",
+            "literal eval",
+            "combine",
+            "append or update",
+            "remove keys",
+            "rename keys",
+            "path selection",
+            "jq expression",
+            "parse json",
+            "add column",
+            "concatenate",
+            "drop column",
+            "filter",
+            "head",
+            "merge",
+            "rename column",
+            "replace value",
+            "select columns",
+            "sort",
+            "tail",
+            "drop duplicates",
+            "word count",
+            "case conversion",
+            "text replace",
+            "text extract",
+            "text join",
+            "text clean",
+            "text to dataframe",
+            "data manipulation",
+            "data transformation",
+        ],
+    }
+
+    # Operation -> operation-specific input fields to reveal when selected.
+    OPERATION_FIELDS: dict[str, list[str]] = {
+        # JSON
+        "Select Keys": ["select_keys_input"],
+        "Literal Eval": [],
+        "Combine": [],
+        "Append or Update": ["append_update_data"],
+        "Remove Keys": ["remove_keys_input"],
+        "Rename Keys": ["rename_keys_input"],
+        "Path Selection": ["mapped_json_display", "selected_key"],
+        "JQ Expression": ["query"],
+        # Table
+        "Add Column": ["new_column_name", "new_column_value"],
+        "Concatenate": [],
+        "Drop Column": ["column_name"],
+        "Filter": ["column_name", "filter_value", "filter_operator"],
+        "Head": ["num_rows"],
+        "Merge": ["left_dataframe", "right_dataframe", "merge_on_column", "merge_how"],
+        "Rename Column": ["column_name", "new_column_name"],
+        "Replace Value": ["column_name", "replace_value", "replacement_value"],
+        "Select Columns": ["columns_to_select"],
+        "Sort": ["column_name", "ascending"],
+        "Tail": ["num_rows"],
+        "Drop Duplicates": ["column_name"],
+        # Text
+        "Word Count": ["count_words", "count_characters", "count_lines"],
+        "Case Conversion": ["case_type"],
+        "Text Replace": ["search_pattern", "replacement_text", "use_regex"],
+        "Text Extract": ["extract_pattern", "max_matches"],
+        "Text Head": ["head_characters"],
+        "Text Tail": ["tail_characters"],
+        "Text Strip": ["strip_mode", "strip_characters"],
+        "Text Join": ["text_input_2"],
+        "Text Clean": ["remove_extra_spaces", "remove_special_chars", "remove_empty_lines"],
+        "Text to DataFrame": ["table_separator", "has_header"],
+    }
+
+    # The three main inputs (one per data type). They are never treated as
+    # operation-specific fields; the input-type selector toggles them.
+    MAIN_INPUTS = ("text_input", "data", "df")
+
+    # Every operation-specific field (union of all the lists above), used to
+    # hide and reset fields whenever the input type or operation changes.
+    ALL_OPERATION_FIELDS: list[str] = [
+        # JSON
+        "select_keys_input",
+        "append_update_data",
+        "remove_keys_input",
+        "rename_keys_input",
+        "mapped_json_display",
+        "selected_key",
+        "query",
+        # Table
+        "column_name",
+        "filter_value",
+        "filter_operator",
+        "ascending",
+        "new_column_name",
+        "new_column_value",
+        "columns_to_select",
+        "num_rows",
+        "replace_value",
+        "replacement_value",
+        "left_dataframe",
+        "right_dataframe",
+        "merge_on_column",
+        "merge_how",
+        # Text
+        "table_separator",
+        "has_header",
+        "count_words",
+        "count_characters",
+        "count_lines",
+        "case_type",
+        "use_regex",
+        "search_pattern",
+        "replacement_text",
+        "extract_pattern",
+        "max_matches",
+        "head_characters",
+        "tail_characters",
+        "strip_mode",
+        "strip_characters",
+        "text_input_2",
+        "remove_extra_spaces",
+        "remove_special_chars",
+        "remove_empty_lines",
+    ]
+
+    # Defaults applied to the JSON operation fields when the operation changes,
+    # mirroring the JSON Operations component's reset behavior.
+    OPERATION_FIELD_DEFAULTS: dict[str, Any] = {
+        "select_keys_input": [],
+        "append_update_data": {"key": "value"},
+        "remove_keys_input": [],
+        "rename_keys_input": {"old_key": "new_key"},
+        "mapped_json_display": "",
+        "selected_key": None,
+        "query": "",
+    }
 
     inputs = [
-        # Input type selection (tabs)
+        # --- Input type selector: drives operations, input, and output ---
         TabInput(
             name="input_type",
             display_name="Input Type",
-            options=["Text", "Data", "DataFrame"],
+            options=INPUT_TYPES,
             value="Text",
             info="Select the type of input to operate on.",
             real_time_refresh=True,
         ),
-        # === TEXT INPUT ===
-        HandleInput(
+        # --- Main inputs: one per data type, shown contextually ---
+        MultilineInput(
             name="text_input",
-            display_name="Text Input",
+            display_name="Text",
             info="The input text to process.",
-            input_types=["Message"],
             show=True,
         ),
-        # === DATA INPUT ===
         DataInput(
-            name="data_input",
-            display_name="Data",
-            info="Data object to operate on.",
+            name="data",
+            display_name="JSON",
+            info="The JSON / Data object to operate on.",
             is_list=True,
             show=False,
         ),
-        # === DATAFRAME INPUT ===
         DataFrameInput(
-            name="df_input",
-            display_name="DataFrame",
-            info="The input DataFrame to operate on.",
+            name="df",
+            display_name="Table",
+            info="The input Table to operate on. Connect multiple Tables for merge or concatenate operations.",
+            is_list=True,
             show=False,
         ),
-        # === TEXT OPERATION FIELDS ===
+        # --- Operation picker (options are filtered by Input Type) ---
+        SortableListInput(
+            name="operation",
+            display_name="Operation",
+            placeholder="Select Operation",
+            info="Select the operation to perform. The matching fields and output appear once you choose one.",
+            options=OPERATIONS_BY_TYPE["Text"],
+            real_time_refresh=True,
+            limit=1,
+        ),
+        # --- JSON operation fields ---
+        MessageTextInput(
+            name="select_keys_input",
+            display_name="Select Keys",
+            info="List of keys to select from the data. Only top-level keys can be selected.",
+            show=False,
+            is_list=True,
+            value=[],
+        ),
+        DictInput(
+            name="append_update_data",
+            display_name="Append or Update",
+            info="Data to append or update the existing data with. Only top-level keys are checked.",
+            show=False,
+            value={"key": "value"},
+            is_list=True,
+        ),
+        MessageTextInput(
+            name="remove_keys_input",
+            display_name="Remove Keys",
+            info="List of keys to remove from the data.",
+            show=False,
+            is_list=True,
+            value=[],
+        ),
+        DictInput(
+            name="rename_keys_input",
+            display_name="Rename Keys",
+            info="List of keys to rename in the data.",
+            show=False,
+            is_list=True,
+            value={"old_key": "new_key"},
+        ),
+        MultilineInput(
+            name="mapped_json_display",
+            display_name="JSON to Map",
+            info="Paste or preview your JSON here to explore its structure and select a path for extraction.",
+            required=False,
+            refresh_button=True,
+            real_time_refresh=True,
+            placeholder="Add a JSON example.",
+            show=False,
+        ),
+        DropdownInput(
+            name="selected_key",
+            display_name="Select Path",
+            options=[],
+            required=False,
+            dynamic=True,
+            show=False,
+            value=None,
+        ),
+        MessageTextInput(
+            name="query",
+            display_name="JQ Expression",
+            info="JSON Query to filter the data. Used by Path Selection and JQ Expression operations.",
+            placeholder="e.g., .properties.id",
+            show=False,
+        ),
+        # --- Table operation fields ---
+        StrInput(
+            name="column_name",
+            display_name="Column Name",
+            info="The column name to use for the operation.",
+            dynamic=True,
+            show=False,
+        ),
+        MessageTextInput(
+            name="filter_value",
+            display_name="Filter Value",
+            info="The value to filter rows by.",
+            dynamic=True,
+            show=False,
+        ),
+        DropdownInput(
+            name="filter_operator",
+            display_name="Filter Operator",
+            options=[
+                "equals",
+                "not equals",
+                "contains",
+                "not contains",
+                "starts with",
+                "ends with",
+                "greater than",
+                "less than",
+            ],
+            value="equals",
+            info="The operator to apply for filtering rows.",
+            advanced=False,
+            dynamic=True,
+            show=False,
+        ),
+        BoolInput(
+            name="ascending",
+            display_name="Sort Ascending",
+            info="Whether to sort in ascending order.",
+            dynamic=True,
+            show=False,
+            value=True,
+        ),
+        StrInput(
+            name="new_column_name",
+            display_name="New Column Name",
+            info="The new column name when renaming or adding a column.",
+            dynamic=True,
+            show=False,
+        ),
+        MessageTextInput(
+            name="new_column_value",
+            display_name="New Column Value",
+            info="The value to populate the new column with.",
+            dynamic=True,
+            show=False,
+        ),
+        StrInput(
+            name="columns_to_select",
+            display_name="Columns to Select",
+            dynamic=True,
+            is_list=True,
+            show=False,
+        ),
+        IntInput(
+            name="num_rows",
+            display_name="Number of Rows",
+            info="Number of rows to return (for head/tail).",
+            dynamic=True,
+            show=False,
+            value=5,
+        ),
+        MessageTextInput(
+            name="replace_value",
+            display_name="Value to Replace",
+            info="The value to replace in the column.",
+            dynamic=True,
+            show=False,
+        ),
+        MessageTextInput(
+            name="replacement_value",
+            display_name="Replacement Value",
+            info="The value to replace with.",
+            dynamic=True,
+            show=False,
+        ),
+        DataFrameInput(
+            name="left_dataframe",
+            display_name="Left Table",
+            info="The left (primary) Table for merge operations. "
+            "In a left merge, all rows from this table are preserved.",
+            dynamic=True,
+            show=False,
+        ),
+        DataFrameInput(
+            name="right_dataframe",
+            display_name="Right Table",
+            info="The right (secondary) Table for merge operations. "
+            "In a right merge, all rows from this table are preserved.",
+            dynamic=True,
+            show=False,
+        ),
+        StrInput(
+            name="merge_on_column",
+            display_name="Merge On Column",
+            info="The column name to merge Tables on. Must exist in both Tables.",
+            dynamic=True,
+            show=False,
+        ),
+        DropdownInput(
+            name="merge_how",
+            display_name="Merge Type",
+            options=["inner", "outer", "left", "right"],
+            value="inner",
+            info="Type of merge: inner (intersection), outer (union), left, or right.",
+            dynamic=True,
+            show=False,
+        ),
+        # --- Text operation fields ---
         StrInput(
             name="table_separator",
             display_name="Table Separator",
@@ -311,7 +573,7 @@ class Operations(Component):
         IntInput(
             name="head_characters",
             display_name="Characters from Start",
-            info="Number of characters to extract from the beginning of text.",
+            info="Number of characters to extract from the beginning of text. Must be non-negative.",
             value=100,
             dynamic=True,
             show=False,
@@ -320,7 +582,7 @@ class Operations(Component):
         IntInput(
             name="tail_characters",
             display_name="Characters from End",
-            info="Number of characters to extract from the end of text.",
+            info="Number of characters to extract from the end of text. Must be non-negative.",
             value=100,
             dynamic=True,
             show=False,
@@ -343,11 +605,10 @@ class Operations(Component):
             dynamic=True,
             show=False,
         ),
-        HandleInput(
+        MultilineInput(
             name="text_input_2",
             display_name="Second Text Input",
             info="Second text to join with the first text.",
-            input_types=["Message"],
             dynamic=True,
             show=False,
         ),
@@ -375,681 +636,273 @@ class Operations(Component):
             dynamic=True,
             show=False,
         ),
-        # === DATA OPERATION FIELDS ===
-        MessageTextInput(
-            name="select_keys_input",
-            display_name="Select Keys",
-            info="List of keys to select from the data.",
-            show=False,
-            is_list=True,
-        ),
-        MessageTextInput(
-            name="filter_key",
-            display_name="Filter Key",
-            info="Name of the key containing the list to filter.",
-            is_list=True,
-            show=False,
-        ),
-        DropdownInput(
-            name="operator",
-            display_name="Comparison Operator",
-            options=["equals", "not equals", "contains", "starts with", "ends with"],
-            info="The operator to apply for comparing the values.",
-            value="equals",
-            show=False,
-        ),
-        DictInput(
-            name="filter_values",
-            display_name="Filter Values",
-            info="Key-value pairs to filter by.",
-            show=False,
-            is_list=True,
-        ),
-        DictInput(
-            name="append_update_data",
-            display_name="Append or Update",
-            info="Data to append or update the existing data with.",
-            show=False,
-            value={"key": "value"},
-            is_list=True,
-        ),
-        MessageTextInput(
-            name="remove_keys_input",
-            display_name="Remove Keys",
-            info="List of keys to remove from the data.",
-            show=False,
-            is_list=True,
-        ),
-        DictInput(
-            name="rename_keys_input",
-            display_name="Rename Keys",
-            info="Mapping of old keys to new keys.",
-            show=False,
-            is_list=True,
-            value={"old_key": "new_key"},
-        ),
-        MultilineInput(
-            name="mapped_json_display",
-            display_name="JSON to Map",
-            info="Paste JSON here to explore its structure and select a path.",
-            required=False,
-            refresh_button=True,
-            real_time_refresh=True,
-            placeholder="Add a JSON example.",
-            show=False,
-        ),
-        DropdownInput(
-            name="selected_key",
-            display_name="Select Path",
-            options=[],
-            required=False,
-            dynamic=True,
-            show=False,
-        ),
-        MessageTextInput(
-            name="query",
-            display_name="JQ Expression",
-            info="JQ expression to query the data.",
-            placeholder="e.g., .properties.id",
-            show=False,
-        ),
-        # === DATAFRAME OPERATION FIELDS ===
-        StrInput(
-            name="column_name",
-            display_name="Column Name",
-            info="The column name to use for the operation.",
-            dynamic=True,
-            show=False,
-        ),
-        MessageTextInput(
-            name="filter_value",
-            display_name="Filter Value",
-            info="The value to filter rows by.",
-            dynamic=True,
-            show=False,
-        ),
-        DropdownInput(
-            name="filter_operator",
-            display_name="Filter Operator",
-            options=[
-                "equals",
-                "not equals",
-                "contains",
-                "not contains",
-                "starts with",
-                "ends with",
-                "greater than",
-                "less than",
-            ],
-            value="equals",
-            info="The operator to apply for filtering rows.",
-            dynamic=True,
-            show=False,
-        ),
-        BoolInput(
-            name="ascending",
-            display_name="Sort Ascending",
-            info="Whether to sort in ascending order.",
-            dynamic=True,
-            show=False,
-            value=True,
-        ),
-        StrInput(
-            name="new_column_name",
-            display_name="New Column Name",
-            info="The new column name when renaming or adding a column.",
-            dynamic=True,
-            show=False,
-        ),
-        MessageTextInput(
-            name="new_column_value",
-            display_name="New Column Value",
-            info="The value to populate the new column with.",
-            dynamic=True,
-            show=False,
-        ),
-        StrInput(
-            name="columns_to_select",
-            display_name="Columns to Select",
-            dynamic=True,
-            is_list=True,
-            show=False,
-        ),
-        IntInput(
-            name="num_rows",
-            display_name="Number of Rows",
-            info="Number of rows to return.",
-            dynamic=True,
-            show=False,
-            value=5,
-        ),
-        MessageTextInput(
-            name="replace_value",
-            display_name="Value to Replace",
-            info="The value to replace in the column.",
-            dynamic=True,
-            show=False,
-        ),
-        MessageTextInput(
-            name="replacement_value",
-            display_name="Replacement Value",
-            info="The value to replace with.",
-            dynamic=True,
-            show=False,
-        ),
-        # === OPERATION SELECTION (last) ===
-        SortableListInput(
-            name="operation",
-            display_name="Operation",
-            placeholder="Select Operation",
-            info="Select the operation to perform.",
-            options=OPERATIONS_BY_TYPE["Text"],  # Default to Text operations
-            real_time_refresh=True,
-            limit=1,
-        ),
     ]
 
-    outputs = []
+    # Default output matches the default Input Type ("Text" -> Message).
+    # update_outputs / update_frontend_node narrow it to the selected type and
+    # operation.
+    outputs = [Output(display_name="Message", name="message_output", method="as_message")]
 
-    def update_build_config(self, build_config: dict, field_value: Any, field_name: str | None = None) -> dict:
-        """Update build configuration based on input type and operation selection."""
-        # Hide all dynamic fields first
-        for field in ALL_DYNAMIC_FIELDS:
+    # ------------------------------------------------------------------
+    # Operation routing helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_operation_name(field_value: Any) -> str:
+        """Extract the operation name from a SortableListInput value."""
+        if isinstance(field_value, list) and len(field_value) > 0 and isinstance(field_value[0], dict):
+            return field_value[0].get("name", "")
+        if isinstance(field_value, str):
+            return field_value
+        return ""
+
+    def _operation_name(self) -> str:
+        """Get the currently selected operation name."""
+        return self._extract_operation_name(getattr(self, "operation", []))
+
+    @staticmethod
+    def _default_output_for_type(input_type: str) -> Output:
+        """Return the output advertised for an input type when no operation is selected yet."""
+        if input_type == "JSON":
+            return Output(display_name="JSON", name="data_output", method="as_data")
+        if input_type == "Table":
+            return Output(display_name="Table", name="dataframe_output", method="as_dataframe")
+        return Output(display_name="Message", name="message_output", method="as_message")
+
+    # ------------------------------------------------------------------
+    # Dynamic UI
+    # ------------------------------------------------------------------
+    def _reset_operation_fields(self, build_config: dotdict) -> None:
+        """Hide every operation-specific field and restore its default value."""
+        for field in self.ALL_OPERATION_FIELDS:
             if field in build_config:
                 build_config[field]["show"] = False
+                if field in self.OPERATION_FIELD_DEFAULTS:
+                    build_config[field]["value"] = self.OPERATION_FIELD_DEFAULTS[field]
 
-        # Handle input_type change - update operation options
-        if field_name == "input_type":
-            input_type = field_value
-            build_config["operation"]["options"] = OPERATIONS_BY_TYPE.get(input_type, [])
-            build_config["operation"]["value"] = []  # Clear selection when type changes
+    def _show_main_input(self, build_config: dotdict, input_type: str, operation: str) -> None:
+        """Show only the main input that matches the input type; hide the others."""
+        for inp in self.MAIN_INPUTS:
+            if inp in build_config:
+                build_config[inp]["show"] = False
+                build_config[inp]["required"] = False
 
-            # Show the appropriate input field
-            if input_type == "Text":
-                build_config["text_input"]["show"] = True
-            elif input_type == "Data":
-                build_config["data_input"]["show"] = True
-                # Set is_list based on operation (default to False)
-                build_config["data_input"]["is_list"] = False
-            elif input_type == "DataFrame":
-                build_config["df_input"]["show"] = True
+        main_input = INPUT_TYPE_TO_MAIN_INPUT.get(input_type)
+        if main_input and main_input in build_config:
+            build_config[main_input]["show"] = True
+            build_config[main_input]["required"] = True
+            # The JSON "Combine" operation consumes a list of Data objects.
+            if main_input == "data":
+                build_config["data"]["is_list"] = operation == "Combine"
 
-            return build_config
-
-        # Handle operation change - show relevant fields
-        if field_name == "operation":
-            operation_name = self._extract_operation_name(field_value)
-            if not operation_name:
-                # Still show the input field based on current input_type
-                input_type = build_config.get("input_type", {}).get("value", "Text")
-                if input_type == "Text":
-                    build_config["text_input"]["show"] = True
-                elif input_type == "Data":
-                    build_config["data_input"]["show"] = True
-                elif input_type == "DataFrame":
-                    build_config["df_input"]["show"] = True
-                return build_config
-
-            # Get fields for this operation
-            fields_to_show = OPERATION_FIELDS.get(operation_name, [])
-            for field in fields_to_show:
-                if field in build_config:
-                    build_config[field]["show"] = True
-
-            # Special handling for Data operations that need is_list=True
-            if operation_name == "Combine":
-                build_config["data_input"]["is_list"] = True
-            elif "data_input" in fields_to_show:
-                build_config["data_input"]["is_list"] = False
-
-            return build_config
-
-        # Handle mapped_json_display change for Path Selection
+    def update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None) -> dotdict:
+        # Path Selection: refresh the available JSON paths from the pasted JSON.
         if field_name == "mapped_json_display":
             try:
                 parsed_json = json.loads(field_value)
-                keys = self._extract_all_paths(parsed_json)
+                keys = self.extract_all_paths(parsed_json)
                 build_config["selected_key"]["options"] = keys
                 build_config["selected_key"]["show"] = True
             except (json.JSONDecodeError, TypeError, ValueError) as e:
                 logger.error(f"Error parsing mapped JSON: {e}")
                 build_config["selected_key"]["show"] = False
+            return build_config
 
-        # Preserve current visibility state for fields not being changed
-        if field_name not in ("input_type", "operation"):
+        # Input type changed: swap the operation list, clear the selection, and
+        # show only the matching input. No operation-specific fields are shown
+        # until an operation is picked.
+        if field_name == "input_type":
+            input_type = field_value if field_value in OPERATIONS_BY_TYPE else "Text"
+            build_config["operation"]["options"] = OPERATIONS_BY_TYPE[input_type]
+            build_config["operation"]["value"] = []
+            self._reset_operation_fields(build_config)
+            self._show_main_input(build_config, input_type, operation="")
+            return build_config
+
+        # Operation changed: reset fields, show the input for the current type,
+        # then reveal the operation-specific fields.
+        if field_name == "operation":
+            operation = self._extract_operation_name(field_value)
+            self._reset_operation_fields(build_config)
+
             input_type = build_config.get("input_type", {}).get("value", "Text")
-            operation_value = build_config.get("operation", {}).get("value", [])
-            operation_name = self._extract_operation_name(operation_value)
+            self._show_main_input(build_config, input_type, operation)
 
-            # Show input field
-            if input_type == "Text":
-                build_config["text_input"]["show"] = True
-            elif input_type == "Data":
-                build_config["data_input"]["show"] = True
-            elif input_type == "DataFrame":
-                build_config["df_input"]["show"] = True
+            for field in self.OPERATION_FIELDS.get(operation, []):
+                if field in build_config:
+                    build_config[field]["show"] = True
 
-            # Show operation fields
-            if operation_name:
-                fields_to_show = OPERATION_FIELDS.get(operation_name, [])
-                for field in fields_to_show:
-                    if field in build_config:
-                        build_config[field]["show"] = True
+            return build_config
 
         return build_config
 
     def update_outputs(self, frontend_node: dict, field_name: str, field_value: Any) -> dict:
-        """Create dynamic outputs based on selected operation."""
-        # Always update outputs when input_type or operation changes
-        # Also update when operation-related fields change (for Path Selection, etc.)
-        if field_name not in ("input_type", "operation", "mapped_json_display", "selected_key"):
+        """Create the output(s) appropriate to the selected input type and operation."""
+        if field_name not in ("input_type", "operation"):
+            return frontend_node
+
+        if field_name == "input_type":
+            # Switching type clears the operation; advertise the type's default.
+            input_type = field_value if field_value in OPERATIONS_BY_TYPE else "Text"
+            frontend_node["outputs"] = [self._default_output_for_type(input_type)]
+            return frontend_node
+
+        # field_name == "operation"
+        operation = self._extract_operation_name(field_value)
+        input_type = frontend_node.get("template", {}).get("input_type", {}).get("value", "Text")
+
+        if not operation:
+            # No operation selected: fall back to the input type's default output.
+            frontend_node["outputs"] = [self._default_output_for_type(input_type)]
             return frontend_node
 
         frontend_node["outputs"] = []
-
-        # Get current input type and operation
-        input_type = None
-        operation_name = None
-
-        if field_name == "input_type":
-            input_type = field_value
-            # When input type changes, no operation is selected yet
-            operation_name = None
-        elif field_name == "operation":
-            operation_name = self._extract_operation_name(field_value)
-            # Get input_type from the node template
-            input_type = frontend_node.get("template", {}).get("input_type", {}).get("value", "Text")
+        if operation in JSON_OPERATIONS or operation == "Word Count":
+            frontend_node["outputs"].append(Output(display_name="JSON", name="data_output", method="as_data"))
+        elif operation in TABLE_OPERATIONS or operation == "Text to DataFrame":
+            frontend_node["outputs"].append(
+                Output(display_name="Table", name="dataframe_output", method="as_dataframe")
+            )
+        elif operation == "Text Join":
+            frontend_node["outputs"].append(Output(display_name="Text", name="text_output", method="as_text"))
+            frontend_node["outputs"].append(Output(display_name="Message", name="message_output", method="as_message"))
         else:
-            # For other fields (mapped_json_display, selected_key), get current values from template
-            operation_value = frontend_node.get("template", {}).get("operation", {}).get("value", [])
-            operation_name = self._extract_operation_name(operation_value)
-            input_type = frontend_node.get("template", {}).get("input_type", {}).get("value", "Text")
-
-        # If no operation selected, show default output based on input type
-        if not operation_name:
-            if input_type == "Text":
-                frontend_node["outputs"].append(Output(display_name="Message", name="message", method="get_message"))
-            elif input_type == "Data":
-                frontend_node["outputs"].append(Output(display_name="Data", name="data_output", method="get_data"))
-            elif input_type == "DataFrame":
-                frontend_node["outputs"].append(
-                    Output(display_name="DataFrame", name="dataframe", method="get_dataframe")
-                )
-            return frontend_node
-
-        # First, explicitly check for Path Selection to ensure it always gets output
-        if operation_name == "Path Selection":
-            frontend_node["outputs"].append(Output(display_name="Data", name="data_output", method="get_data"))
-            return frontend_node
-        
-        # Then check if it's a Data operation by checking OPERATION_FIELDS
-        # This ensures all Data operations get the correct output
-        if operation_name in OPERATION_FIELDS and "data_input" in OPERATION_FIELDS.get(operation_name, []):
-            frontend_node["outputs"].append(Output(display_name="Data", name="data_output", method="get_data"))
-            return frontend_node
-
-        # Text operations outputs
-        if operation_name == "Word Count":
-            frontend_node["outputs"].append(Output(display_name="Data", name="data_output", method="get_data"))
-        elif operation_name == "Text to DataFrame":
-            frontend_node["outputs"].append(Output(display_name="DataFrame", name="dataframe", method="get_dataframe"))
-        elif operation_name == "Text Join":
-            frontend_node["outputs"].append(Output(display_name="Text", name="text", method="get_text"))
-            frontend_node["outputs"].append(Output(display_name="Message", name="message", method="get_message"))
-        elif operation_name in (
-            "Case Conversion",
-            "Text Replace",
-            "Text Extract",
-            "Text Head",
-            "Text Tail",
-            "Text Strip",
-            "Text Clean",
-        ):
-            frontend_node["outputs"].append(Output(display_name="Message", name="message", method="get_message"))
-        # DataFrame operations outputs
-        elif operation_name in OPERATION_FIELDS and "df_input" in OPERATION_FIELDS.get(operation_name, []):
-            frontend_node["outputs"].append(Output(display_name="DataFrame", name="dataframe", method="get_dataframe"))
-        # Final fallback: use input_type to determine output
-        elif not frontend_node["outputs"]:
-            if input_type == "Text":
-                frontend_node["outputs"].append(Output(display_name="Message", name="message", method="get_message"))
-            elif input_type == "Data":
-                frontend_node["outputs"].append(Output(display_name="Data", name="data_output", method="get_data"))
-            elif input_type == "DataFrame":
-                frontend_node["outputs"].append(
-                    Output(display_name="DataFrame", name="dataframe", method="get_dataframe")
-                )
+            frontend_node["outputs"].append(Output(display_name="Message", name="message_output", method="as_message"))
 
         return frontend_node
 
-    def _extract_operation_name(self, field_value: Any) -> str:
-        """Extract operation name from SortableListInput value."""
-        if isinstance(field_value, list) and len(field_value) > 0:
-            return field_value[0].get("name", "")
-        return ""
+    async def update_frontend_node(self, new_frontend_node: dict, current_frontend_node: dict) -> dict:
+        """Keep the operation options and outputs in sync with the saved input type on load."""
+        await super().update_frontend_node(new_frontend_node, current_frontend_node)
 
-    def get_operation_name(self) -> str:
-        """Get the selected operation name."""
-        operation_input = getattr(self, "operation", [])
-        return self._extract_operation_name(operation_input)
+        template = new_frontend_node.get("template", {})
+        input_type = template.get("input_type", {}).get("value", "Text")
+        if input_type not in OPERATIONS_BY_TYPE:
+            input_type = "Text"
 
-    # ==================== OUTPUT METHODS ====================
+        # Filter the operation picker to the saved input type.
+        if "operation" in template:
+            template["operation"]["options"] = OPERATIONS_BY_TYPE[input_type]
 
-    def get_message(self) -> Message:
-        """Return result as Message."""
-        result = self._process()
-        return Message(text=self._format_result_as_text(result))
+        # Re-derive the outputs from the saved input type + operation.
+        operation_value = template.get("operation", {}).get("value", [])
+        if self._extract_operation_name(operation_value):
+            self.update_outputs(new_frontend_node, "operation", operation_value)
+        else:
+            self.update_outputs(new_frontend_node, "input_type", input_type)
 
-    def get_text(self) -> Message:
-        """Return result as Message (text output)."""
-        result = self._process()
-        return Message(text=self._format_result_as_text(result))
+        return new_frontend_node
 
-    def get_data(self) -> Data:
-        """Return result as Data object."""
-        result = self._process()
-        if result is None:
-            return Data(data={})
-        if isinstance(result, Data):
-            return result
-        if isinstance(result, dict):
-            return Data(data=result)
-        if isinstance(result, list):
-            return Data(data={"items": result})
-        return Data(data={"result": str(result)})
+    # ==================================================================
+    # Output methods (referenced by update_outputs)
+    # ==================================================================
+    def as_data(self) -> Data:
+        """JSON-typed output: JSON operations and Word Count."""
+        operation = self._operation_name()
+        if operation in JSON_OPERATIONS:
+            handler = self._json_handlers().get(operation)
+            if handler:
+                try:
+                    return handler()
+                except Exception as e:
+                    logger.error(f"Error executing {operation}: {e!s}")
+                    raise
+        if operation == "Word Count":
+            return self._word_count_data()
+        return Data(data={})
 
-    def get_dataframe(self) -> DataFrame:
-        """Return result as DataFrame."""
-        result = self._process()
-        if result is None:
-            return DataFrame(pd.DataFrame())
-        if isinstance(result, DataFrame):
-            return result
-        if isinstance(result, pd.DataFrame):
-            return DataFrame(result)
+    def as_dataframe(self) -> DataFrame:
+        """Table-typed output: Table operations and Text to DataFrame."""
+        operation = self._operation_name()
+        if operation in TABLE_OPERATIONS:
+            return self._run_table_operation(operation)
+        if operation == "Text to DataFrame":
+            return self._text_to_dataframe(getattr(self, "text_input", "") or "")
         return DataFrame(pd.DataFrame())
 
-    def _format_result_as_text(self, result: Any) -> str:
-        """Format result as text string."""
-        if result is None:
-            return ""
-        if isinstance(result, list):
-            return "\n".join(str(item) for item in result)
-        if isinstance(result, dict):
-            return json.dumps(result, indent=2)
-        return str(result)
+    def as_message(self) -> Message:
+        """Message-typed output: generic text operations (and Text Join)."""
+        return Message(text=self._format_result_as_text(self._run_text_operation()))
 
-    def _process(self) -> Any:
-        """Process based on the selected operation."""
-        operation = self.get_operation_name()
-        if not operation:
-            return None
+    def as_text(self) -> Message:
+        """Text output for the Text Join operation."""
+        return self.as_message()
 
-        # Text operations
-        text_handlers = {
-            "Word Count": self._word_count,
-            "Case Conversion": self._case_conversion,
-            "Text Replace": self._text_replace,
-            "Text Extract": self._text_extract,
-            "Text Head": self._text_head,
-            "Text Tail": self._text_tail,
-            "Text Strip": self._text_strip,
-            "Text Join": self._text_join,
-            "Text Clean": self._text_clean,
-            "Text to DataFrame": self._text_to_dataframe,
+    # ==================================================================
+    # JSON operations
+    # ==================================================================
+    @staticmethod
+    def extract_all_paths(obj, path=""):
+        paths = []
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                new_path = f"{path}.{k}" if path else f".{k}"
+                paths.append(new_path)
+                paths.extend(OperationsComponent.extract_all_paths(v, new_path))
+        elif isinstance(obj, list) and obj:
+            new_path = f"{path}[0]"
+            paths.append(new_path)
+            paths.extend(OperationsComponent.extract_all_paths(obj[0], new_path))
+        return paths
+
+    @staticmethod
+    def remove_keys_recursive(obj, keys_to_remove):
+        if isinstance(obj, dict):
+            return {
+                k: OperationsComponent.remove_keys_recursive(v, keys_to_remove)
+                for k, v in obj.items()
+                if k not in keys_to_remove
+            }
+        if isinstance(obj, list):
+            return [OperationsComponent.remove_keys_recursive(item, keys_to_remove) for item in obj]
+        return obj
+
+    @staticmethod
+    def rename_keys_recursive(obj, rename_map):
+        if isinstance(obj, dict):
+            return {
+                rename_map.get(k, k): OperationsComponent.rename_keys_recursive(v, rename_map) for k, v in obj.items()
+            }
+        if isinstance(obj, list):
+            return [OperationsComponent.rename_keys_recursive(item, rename_map) for item in obj]
+        return obj
+
+    def _json_handlers(self) -> "dict[str, Callable[[], Data]]":
+        return {
+            "Select Keys": self.select_keys,
+            "Literal Eval": self.evaluate_data,
+            "Combine": self.combine_data,
+            "Append or Update": self.append_update,
+            "Remove Keys": self.remove_keys,
+            "Rename Keys": self.rename_keys,
+            "Path Selection": self.json_path,
+            "JQ Expression": self.json_query,
         }
 
-        # Data operations
-        data_handlers: dict[str, Callable[[], Data]] = {
-            "Select Keys": self._select_keys,
-            "Literal Eval": self._evaluate_data,
-            "Combine": self._combine_data,
-            "Filter Values": self._multi_filter_data,
-            "Append or Update": self._append_update,
-            "Remove Keys": self._remove_keys,
-            "Rename Keys": self._rename_keys,
-            "Path Selection": self._json_path,
-            "JQ Expression": self._json_query,
-        }
-
-        # DataFrame operations
-        df_handlers = {
-            "Add Column": self._df_add_column,
-            "Drop Column": self._df_drop_column,
-            "Filter Rows": self._df_filter_rows,
-            "Head Rows": self._df_head,
-            "Rename Column": self._df_rename_column,
-            "Replace Value": self._df_replace_value,
-            "Select Columns": self._df_select_columns,
-            "Sort": self._df_sort,
-            "Tail Rows": self._df_tail,
-            "Drop Duplicates": self._df_drop_duplicates,
-        }
-
-        # Try each handler category
-        if operation in text_handlers:
-            return text_handlers[operation]()
-        if operation in data_handlers:
-            return data_handlers[operation]()
-        if operation in df_handlers:
-            return df_handlers[operation]()
-
-        return None
-
-    # ==================== TEXT OPERATIONS ====================
-
-    def _extract_text(self, value: Any) -> str:
-        """Extract text from a value, handling both string and Message types."""
-        if value is None:
-            return ""
-        if hasattr(value, "text"):
-            return str(value.text) if value.text else ""
-        return str(value)
-
-    def _get_text_input(self) -> str:
-        """Get text from text_input."""
-        return self._extract_text(getattr(self, "text_input", ""))
-
-    def _word_count(self) -> dict[str, Any]:
-        """Count words, characters, and lines in text."""
-        text_str = self._get_text_input()
-        is_empty = not text_str or not text_str.strip()
-        result: dict[str, Any] = {}
-
-        if getattr(self, "count_words", True):
-            if is_empty:
-                result["word_count"] = 0
-                result["unique_words"] = 0
-            else:
-                words = text_str.split()
-                result["word_count"] = len(words)
-                result["unique_words"] = len(set(words))
-
-        if getattr(self, "count_characters", True):
-            if is_empty:
-                result["character_count"] = 0
-                result["character_count_no_spaces"] = 0
-            else:
-                result["character_count"] = len(text_str)
-                result["character_count_no_spaces"] = len(text_str.replace(" ", ""))
-
-        if getattr(self, "count_lines", True):
-            if is_empty:
-                result["line_count"] = 0
-                result["non_empty_lines"] = 0
-            else:
-                lines = text_str.split("\n")
-                result["line_count"] = len(lines)
-                result["non_empty_lines"] = len([line for line in lines if line.strip()])
-
-        return result
-
-    def _case_conversion(self) -> str:
-        """Convert text case."""
-        text = self._get_text_input()
-        case_type = getattr(self, "case_type", "lowercase")
-        converter = CASE_CONVERTERS.get(case_type)
-        return converter(text) if converter else text
-
-    def _text_replace(self) -> str:
-        """Replace text patterns."""
-        text = self._get_text_input()
-        search_pattern = getattr(self, "search_pattern", "")
-        if not search_pattern:
-            return text
-
-        replacement_text = getattr(self, "replacement_text", "")
-        use_regex = getattr(self, "use_regex", False)
-
-        if use_regex:
-            try:
-                return re.sub(search_pattern, replacement_text, text)
-            except re.error as e:
-                self.log(f"Invalid regex pattern: {e}")
-                return text
-
-        return text.replace(search_pattern, replacement_text)
-
-    def _text_extract(self) -> list[str]:
-        """Extract text matching patterns."""
-        text = self._get_text_input()
-        extract_pattern = getattr(self, "extract_pattern", "")
-        if not extract_pattern:
-            return []
-
-        max_matches = getattr(self, "max_matches", 10)
-
-        try:
-            matches = re.findall(extract_pattern, text)
-        except re.error as e:
-            msg = f"Invalid regex pattern '{extract_pattern}': {e}"
-            raise ValueError(msg) from e
-
-        return matches[:max_matches] if max_matches > 0 else matches
-
-    def _text_head(self) -> str:
-        """Extract characters from the beginning of text."""
-        text = self._get_text_input()
-        head_characters = getattr(self, "head_characters", 100)
-        if head_characters < 0:
-            msg = f"Characters from Start must be non-negative, got {head_characters}"
-            raise ValueError(msg)
-        return text[:head_characters] if head_characters > 0 else ""
-
-    def _text_tail(self) -> str:
-        """Extract characters from the end of text."""
-        text = self._get_text_input()
-        tail_characters = getattr(self, "tail_characters", 100)
-        if tail_characters < 0:
-            msg = f"Characters from End must be non-negative, got {tail_characters}"
-            raise ValueError(msg)
-        return text[-tail_characters:] if tail_characters > 0 else ""
-
-    def _text_strip(self) -> str:
-        """Remove whitespace or specific characters from text edges."""
-        text = self._get_text_input()
-        strip_mode = getattr(self, "strip_mode", "both")
-        strip_characters = getattr(self, "strip_characters", "")
-        chars_to_strip = strip_characters if strip_characters else None
-
-        if strip_mode == "left":
-            return text.lstrip(chars_to_strip)
-        if strip_mode == "right":
-            return text.rstrip(chars_to_strip)
-        return text.strip(chars_to_strip)
-
-    def _text_join(self) -> str:
-        """Join two texts with line break separator."""
-        text1 = self._get_text_input()
-        text2 = self._extract_text(getattr(self, "text_input_2", ""))
-
-        if text1 and text2:
-            return f"{text1}\n{text2}"
-        return text1 or text2
-
-    def _text_clean(self) -> str:
-        """Clean text by removing extra spaces, special chars, etc."""
-        text = self._get_text_input()
-        result = text
-
-        if getattr(self, "remove_extra_spaces", True):
-            result = re.sub(r"\s+", " ", result)
-
-        if getattr(self, "remove_special_chars", False):
-            result = re.sub(r"[^\w\s]", "", result)
-
-        if getattr(self, "remove_empty_lines", False):
-            lines = [line for line in result.split("\n") if line.strip()]
-            result = "\n".join(lines)
-
-        return result
-
-    def _text_to_dataframe(self) -> DataFrame:
-        """Convert markdown-style table text to DataFrame."""
-        text = self._get_text_input()
-        lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
-        if not lines:
-            return DataFrame(pd.DataFrame())
-
-        separator = getattr(self, "table_separator", "|")
-        has_header = getattr(self, "has_header", True)
-
-        rows = []
-        for line in lines:
-            cleaned_line = line.strip(separator)
-            cells = [cell.strip() for cell in cleaned_line.split(separator)]
-            rows.append(cells)
-
-        if not rows:
-            return DataFrame(pd.DataFrame())
-
-        if has_header and len(rows) > 1:
-            header = rows[0]
-            data_rows = rows[1:]
-            df = pd.DataFrame(data_rows, columns=header)
-        else:
-            max_cols = max(len(row) for row in rows) if rows else 0
-            columns = [f"col_{i}" for i in range(max_cols)]
-            df = pd.DataFrame(rows, columns=columns)
-
-        # Convert numeric columns
-        for col in df.columns:
-            with contextlib.suppress(ValueError, TypeError):
-                df[col] = pd.to_numeric(df[col])
-
-        self.log(f"Converted text to DataFrame: {len(df)} rows, {len(df.columns)} columns")
-        return DataFrame(df)
-
-    # ==================== DATA OPERATIONS ====================
-
-    def _get_data_dict(self) -> dict:
+    def get_data_dict(self) -> dict:
         """Extract data dictionary from Data object."""
-        data = self.data_input
-        if isinstance(data, list) and len(data) == 1:
-            data = data[0]
-        return data.model_dump() if hasattr(data, "model_dump") else {}
+        data = self.data[0] if isinstance(self.data, list) and len(self.data) == 1 else self.data
+        return data.model_dump()
 
-    def _get_normalized_data(self) -> dict:
+    def get_normalized_data(self) -> dict:
         """Get normalized data dictionary, handling the 'data' key if present."""
-        data_dict = self._get_data_dict()
+        data_dict = self.get_data_dict()
         return data_dict.get("data", data_dict)
 
-    def _data_is_list(self) -> bool:
+    def data_is_list(self) -> bool:
         """Check if data contains multiple items."""
-        data = getattr(self, "data_input", None)
-        return isinstance(data, list) and len(data) > 1
+        return isinstance(self.data, list) and len(self.data) > 1
 
-    def _validate_single_data(self, operation: str) -> None:
+    def validate_single_data(self, operation: str) -> None:
         """Validate that the operation is being performed on a single data object."""
-        if self._data_is_list():
+        if self.data_is_list():
             msg = f"{operation} operation is not supported for multiple data objects."
             raise ValueError(msg)
 
-    def _select_keys(self) -> Data:
+    def select_keys(self) -> Data:
         """Select specific keys from the data dictionary."""
-        self._validate_single_data("Select Keys")
-        data_dict = self._get_normalized_data()
-        filter_criteria: list[str] = getattr(self, "select_keys_input", [])
+        self.validate_single_data("Select Keys")
+        data_dict = self.get_normalized_data()
+        filter_criteria: list[str] = self.select_keys_input
 
         if len(filter_criteria) == 1 and filter_criteria[0] == "data":
             filtered = data_dict["data"]
@@ -1061,17 +914,28 @@ class Operations(Component):
 
         return Data(data=filtered)
 
-    def _evaluate_data(self) -> Data:
-        """Evaluate string values in the data dictionary."""
-        self._validate_single_data("Literal Eval")
-        return Data(**self._recursive_eval(self._get_data_dict()))
+    def remove_keys(self) -> Data:
+        """Remove specified keys from the data dictionary, recursively."""
+        self.validate_single_data("Remove Keys")
+        data_dict = self.get_normalized_data()
+        remove_keys_input: list[str] = self.remove_keys_input
+        filtered = OperationsComponent.remove_keys_recursive(data_dict, set(remove_keys_input))
+        return Data(data=filtered)
 
-    def _recursive_eval(self, data: Any) -> Any:
-        """Recursively evaluate string values."""
+    def rename_keys(self) -> Data:
+        """Rename keys in the data dictionary, recursively."""
+        self.validate_single_data("Rename Keys")
+        data_dict = self.get_normalized_data()
+        rename_keys_input: dict[str, str] = self.rename_keys_input
+        renamed = OperationsComponent.rename_keys_recursive(data_dict, rename_keys_input)
+        return Data(data=renamed)
+
+    def recursive_eval(self, data: Any) -> Any:
+        """Recursively evaluate string values that look like Python literals."""
         if isinstance(data, dict):
-            return {k: self._recursive_eval(v) for k, v in data.items()}
+            return {k: self.recursive_eval(v) for k, v in data.items()}
         if isinstance(data, list):
-            return [self._recursive_eval(item) for item in data]
+            return [self.recursive_eval(item) for item in data]
         if isinstance(data, str):
             try:
                 if (
@@ -1086,14 +950,20 @@ class Operations(Component):
                 return data
         return data
 
-    def _combine_data(self) -> Data:
-        """Combine multiple data objects into one."""
-        data = getattr(self, "data_input", [])
-        if not self._data_is_list():
-            return data[0] if data else Data(data={})
+    def evaluate_data(self) -> Data:
+        """Evaluate string values in the data dictionary."""
+        self.validate_single_data("Literal Eval")
+        logger.info("evaluating data")
+        return Data(**self.recursive_eval(self.get_data_dict()))
 
-        data_dicts = [d.model_dump().get("data", d.model_dump()) for d in data]
-        combined_data = {}
+    def combine_data(self) -> Data:
+        """Combine multiple data objects into one."""
+        logger.info("combining data")
+        if not self.data_is_list():
+            return self.data[0] if self.data else Data(data={})
+
+        data_dicts = [data.model_dump().get("data", data.model_dump()) for data in self.data]
+        combined_data: dict[str, Any] = {}
 
         for data_dict in data_dicts:
             for key, value in data_dict.items():
@@ -1111,86 +981,28 @@ class Operations(Component):
 
         return Data(**combined_data)
 
-    def _multi_filter_data(self) -> Data:
-        """Apply multiple filters to the data."""
-        self._validate_single_data("Filter Values")
-        data_filtered = self._get_normalized_data()
-        filter_key_list = getattr(self, "filter_key", [])
-        filter_values_dict = getattr(self, "filter_values", {})
-        operator = getattr(self, "operator", "equals")
-
-        for filter_key in filter_key_list:
-            if filter_key not in data_filtered:
-                msg = f"Filter key '{filter_key}' not found in data. Available keys: {list(data_filtered.keys())}"
-                raise ValueError(msg)
-
-            if isinstance(data_filtered[filter_key], list):
-                for filter_data_key, filter_value in filter_values_dict.items():
-                    if filter_value is not None:
-                        filtered_list = []
-                        for item in data_filtered[filter_key]:
-                            if isinstance(item, dict) and filter_data_key in item:
-                                comparison_func = DATA_OPERATORS.get(operator)
-                                if comparison_func and comparison_func(item[filter_data_key], filter_value):
-                                    filtered_list.append(item)
-                        data_filtered[filter_key] = filtered_list
-            else:
-                msg = f"Filter key '{filter_key}' is not a list."
-                raise TypeError(msg)
-
-        return Data(**data_filtered)
-
-    def _append_update(self) -> Data:
-        """Append or Update with new key-value pairs."""
-        self._validate_single_data("Append or Update")
-        data_filtered = self._get_normalized_data()
-        append_data = getattr(self, "append_update_data", {})
-
-        for key, value in append_data.items():
+    def append_update(self) -> Data:
+        """Append or update the data with new key-value pairs."""
+        self.validate_single_data("Append or Update")
+        data_filtered = self.get_normalized_data()
+        for key, value in self.append_update_data.items():
             data_filtered[key] = value
-
         return Data(**data_filtered)
 
-    def _remove_keys(self) -> Data:
-        """Remove specified keys from the data dictionary, recursively."""
-        self._validate_single_data("Remove Keys")
-        data_dict = self._get_normalized_data()
-        remove_keys = set(getattr(self, "remove_keys_input", []))
-
-        def remove_recursive(obj: Any) -> Any:
-            if isinstance(obj, dict):
-                return {k: remove_recursive(v) for k, v in obj.items() if k not in remove_keys}
-            if isinstance(obj, list):
-                return [remove_recursive(item) for item in obj]
-            return obj
-
-        return Data(data=remove_recursive(data_dict))
-
-    def _rename_keys(self) -> Data:
-        """Rename keys in the data dictionary, recursively."""
-        self._validate_single_data("Rename Keys")
-        data_dict = self._get_normalized_data()
-        rename_map = getattr(self, "rename_keys_input", {})
-
-        def rename_recursive(obj: Any) -> Any:
-            if isinstance(obj, dict):
-                return {rename_map.get(k, k): rename_recursive(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [rename_recursive(item) for item in obj]
-            return obj
-
-        return Data(data=rename_recursive(data_dict))
-
-    def _json_path(self) -> Data:
-        """Select data by JSON path."""
+    def json_path(self) -> Data:
+        """Extract a value from the data using the selected JQ path."""
         try:
-            data = getattr(self, "data_input", None)
-            selected_key = getattr(self, "selected_key", None)
-            if not data or not selected_key:
+            import jq
+        except ImportError:
+            msg = "jq is required for Path Selection. Install with: pip install jq"
+            raise ImportError(msg) from None
+
+        try:
+            if not self.data or not self.selected_key:
                 msg = "Missing input data or selected key."
                 raise ValueError(msg)
-            input_payload = data[0].data if isinstance(data, list) else data.data
-            compiled = jq.compile(selected_key)
+            input_payload = self.data[0].data if isinstance(self.data, list) else self.data.data
+            compiled = jq.compile(self.selected_key)
             result = compiled.input(input_payload).first()
             if isinstance(result, dict):
                 return Data(data=result)
@@ -1200,85 +1012,79 @@ class Operations(Component):
             self.log(self.status)
             return Data(data={"error": str(e)})
 
-    def _json_query(self) -> Data:
-        """Query data using JQ expression."""
-        query = getattr(self, "query", "")
-        if not query or not query.strip():
-            msg = "JQ Expression is required and cannot be blank."
-            raise ValueError(msg)
+    def json_query(self) -> Data:
+        """Run a JQ expression against the data."""
+        try:
+            import jq
+        except ImportError:
+            msg = "jq is required for JQ Expression. Install with: pip install jq"
+            raise ImportError(msg) from None
 
-        raw_data = self._get_data_dict()
+        if not self.query or not self.query.strip():
+            msg = "JSON Query is required and cannot be blank."
+            raise ValueError(msg)
+        raw_data = self.get_data_dict()
         try:
             input_str = json.dumps(raw_data)
             repaired = repair_json(input_str)
             data_json = json.loads(repaired)
             jq_input = data_json["data"] if isinstance(data_json, dict) and "data" in data_json else data_json
-            results = jq.compile(query).input(jq_input).all()
+            results = jq.compile(self.query).input(jq_input).all()
             if not results:
-                msg = "No result from JQ query."
+                msg = "No result from JSON query."
                 raise ValueError(msg)
             result = results[0] if len(results) == 1 else results
             if result is None or result == "None":
-                msg = "JQ query returned null/None. Check if the path exists in your data."
+                msg = "JSON query returned null/None. Check if the path exists in your data."
                 raise ValueError(msg)
             if isinstance(result, dict):
                 return Data(data=result)
             return Data(data={"result": result})
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as e:
-            logger.error(f"JQ Query failed: {e}")
-            msg = f"JQ Query error: {e}"
+            logger.error(f"JSON Query failed: {e}")
+            msg = f"JSON Query error: {e}"
             raise ValueError(msg) from e
 
-    @staticmethod
-    def _extract_all_paths(obj: Any, path: str = "") -> list[str]:
-        """Extract all JSON paths from an object."""
-        paths = []
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                new_path = f"{path}.{k}" if path else f".{k}"
-                paths.append(new_path)
-                paths.extend(Operations._extract_all_paths(v, new_path))
-        elif isinstance(obj, list) and obj:
-            new_path = f"{path}[0]"
-            paths.append(new_path)
-            paths.extend(Operations._extract_all_paths(obj[0], new_path))
-        return paths
+    # ==================================================================
+    # Table operations
+    # ==================================================================
+    def _get_primary_dataframe(self) -> DataFrame:
+        """Get the first DataFrame from input (handles both single and list inputs)."""
+        if isinstance(self.df, list):
+            return self.df[0].copy() if self.df else DataFrame()
+        return self.df.copy()
 
-    # ==================== DATAFRAME OPERATIONS ====================
+    def _run_table_operation(self, operation: str) -> DataFrame:
+        # Merge and Concatenate use their own inputs, not the primary df.
+        if operation == "Merge":
+            return self.merge_dataframes()
+        if operation == "Concatenate":
+            return self.concatenate_dataframes()
 
-    def _get_df(self) -> pd.DataFrame:
-        """Get the input DataFrame."""
-        df = getattr(self, "df_input", None)
-        if df is None:
-            return pd.DataFrame()
-        if isinstance(df, DataFrame):
-            return df.copy()
-        if isinstance(df, pd.DataFrame):
-            return df.copy()
-        return pd.DataFrame()
+        df_copy = self._get_primary_dataframe()
+        table_handlers = {
+            "Filter": self.filter_rows_by_value,
+            "Sort": self.sort_by_column,
+            "Drop Column": self.drop_column,
+            "Rename Column": self.rename_column,
+            "Add Column": self.add_column,
+            "Select Columns": self.select_columns,
+            "Head": self.head,
+            "Tail": self.tail,
+            "Replace Value": self.replace_values,
+            "Drop Duplicates": self.drop_duplicates,
+        }
+        handler = table_handlers.get(operation)
+        if handler is None:
+            msg = f"Unsupported operation: {operation}"
+            logger.error(msg)
+            raise ValueError(msg)
+        return handler(df_copy)
 
-    def _df_add_column(self) -> DataFrame:
-        """Add a new column to the DataFrame."""
-        df = self._get_df()
-        new_column_name = getattr(self, "new_column_name", "")
-        new_column_value = getattr(self, "new_column_value", "")
-        df[new_column_name] = [new_column_value] * len(df)
-        return DataFrame(df)
-
-    def _df_drop_column(self) -> DataFrame:
-        """Drop a column from the DataFrame."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        return DataFrame(df.drop(columns=[column_name]))
-
-    def _df_filter_rows(self) -> DataFrame:
-        """Filter rows by value."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        filter_value = getattr(self, "filter_value", "")
+    def filter_rows_by_value(self, df: DataFrame) -> DataFrame:
+        column = df[self.column_name]
+        filter_value = self.filter_value
         operator = getattr(self, "filter_operator", "equals")
-
-        column = df[column_name]
 
         if operator == "equals":
             mask = column == filter_value
@@ -1309,49 +1115,288 @@ class Operations(Component):
 
         return DataFrame(df[mask])
 
-    def _df_head(self) -> DataFrame:
-        """Get the first N rows."""
-        df = self._get_df()
-        num_rows = getattr(self, "num_rows", 5)
-        return DataFrame(df.head(num_rows))
+    def sort_by_column(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.sort_values(by=self.column_name, ascending=self.ascending))
 
-    def _df_tail(self) -> DataFrame:
-        """Get the last N rows."""
-        df = self._get_df()
-        num_rows = getattr(self, "num_rows", 5)
-        return DataFrame(df.tail(num_rows))
+    def drop_column(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.drop(columns=[self.column_name]))
 
-    def _df_rename_column(self) -> DataFrame:
-        """Rename a column."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        new_column_name = getattr(self, "new_column_name", "")
-        return DataFrame(df.rename(columns={column_name: new_column_name}))
+    def rename_column(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.rename(columns={self.column_name: self.new_column_name}))
 
-    def _df_replace_value(self) -> DataFrame:
-        """Replace values in a column."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        replace_value = getattr(self, "replace_value", "")
-        replacement_value = getattr(self, "replacement_value", "")
-        df[column_name] = df[column_name].replace(replace_value, replacement_value)
+    def add_column(self, df: DataFrame) -> DataFrame:
+        df[self.new_column_name] = [self.new_column_value] * len(df)
         return DataFrame(df)
 
-    def _df_select_columns(self) -> DataFrame:
-        """Select specific columns."""
-        df = self._get_df()
-        columns = [col.strip() for col in getattr(self, "columns_to_select", [])]
+    def select_columns(self, df: DataFrame) -> DataFrame:
+        columns = [col.strip() for col in self.columns_to_select]
         return DataFrame(df[columns])
 
-    def _df_sort(self) -> DataFrame:
-        """Sort by column."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        ascending = getattr(self, "ascending", True)
-        return DataFrame(df.sort_values(by=column_name, ascending=ascending))
+    def head(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.head(self.num_rows))
 
-    def _df_drop_duplicates(self) -> DataFrame:
-        """Drop duplicate rows based on a column."""
-        df = self._get_df()
-        column_name = getattr(self, "column_name", "")
-        return DataFrame(df.drop_duplicates(subset=column_name))
+    def tail(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.tail(self.num_rows))
+
+    def replace_values(self, df: DataFrame) -> DataFrame:
+        df[self.column_name] = df[self.column_name].replace(self.replace_value, self.replacement_value)
+        return DataFrame(df)
+
+    def drop_duplicates(self, df: DataFrame) -> DataFrame:
+        return DataFrame(df.drop_duplicates(subset=self.column_name))
+
+    def concatenate_dataframes(self) -> DataFrame:
+        """Concatenate multiple DataFrames vertically (stack rows)."""
+        if not isinstance(self.df, list) or len(self.df) == 0:
+            return self.df.copy() if self.df is not None else DataFrame()
+
+        if len(self.df) == 1:
+            return self.df[0].copy()
+
+        concatenated = pd.concat(self.df, ignore_index=True)
+        return DataFrame(concatenated)
+
+    def merge_dataframes(self) -> DataFrame:
+        """Merge two DataFrames based on a common column (join operation)."""
+        left_df = getattr(self, "left_dataframe", None)
+        right_df = getattr(self, "right_dataframe", None)
+
+        if left_df is None:
+            return DataFrame()
+        if right_df is None:
+            return left_df.copy()
+
+        df_left = left_df.copy()
+        df_right = right_df.copy()
+
+        merge_on = getattr(self, "merge_on_column", None)
+        merge_how = getattr(self, "merge_how", "inner")
+
+        if merge_on:
+            if merge_on not in df_left.columns:
+                msg = f"Column '{merge_on}' not found in left DataFrame. Available: {list(df_left.columns)}"
+                raise ValueError(msg)
+            if merge_on not in df_right.columns:
+                msg = f"Column '{merge_on}' not found in right DataFrame. Available: {list(df_right.columns)}"
+                raise ValueError(msg)
+            merged = df_left.merge(df_right, on=merge_on, how=merge_how, suffixes=("", "_right"))
+        else:
+            merged = df_left.merge(df_right, left_index=True, right_index=True, how=merge_how, suffixes=("", "_right"))
+
+        cols_to_drop = []
+        for col in merged.columns:
+            if col.endswith("_right"):
+                original_col = col[:-6]
+                if original_col in merged.columns:
+                    merged[original_col] = merged[original_col].combine_first(merged[col])
+                    cols_to_drop.append(col)
+
+        if cols_to_drop:
+            merged = merged.drop(columns=cols_to_drop)
+
+        return DataFrame(merged)
+
+    # ==================================================================
+    # Text operations
+    # ==================================================================
+    def _run_text_operation(self) -> Any:
+        """Process text based on the selected operation (Message/Text outputs)."""
+        text = getattr(self, "text_input", "")
+        operation = self._operation_name()
+
+        # Allow empty text for Text Join (second input may have content).
+        if not text and operation != "Text Join":
+            return None
+
+        text_handlers = {
+            "Case Conversion": self._case_conversion,
+            "Text Replace": self._text_replace,
+            "Text Extract": self._text_extract,
+            "Text Head": self._text_head,
+            "Text Tail": self._text_tail,
+            "Text Strip": self._text_strip,
+            "Text Join": self._text_join,
+            "Text Clean": self._text_clean,
+        }
+        handler = text_handlers.get(operation)
+        if handler:
+            return handler(text)
+        return text
+
+    def _word_count_data(self) -> Data:
+        """Word Count operation result as a Data object."""
+        result = self._word_count(getattr(self, "text_input", "") or "")
+        return Data(data=result)
+
+    def _word_count(self, text: str) -> dict[str, Any]:
+        """Count words, characters, and lines in text."""
+        result: dict[str, Any] = {}
+        text_str = str(text) if text else ""
+        is_empty = not text_str or not text_str.strip()
+
+        if getattr(self, "count_words", True):
+            if is_empty:
+                result["word_count"] = 0
+                result["unique_words"] = 0
+            else:
+                words = text_str.split()
+                result["word_count"] = len(words)
+                result["unique_words"] = len(set(words))
+
+        if getattr(self, "count_characters", True):
+            if is_empty:
+                result["character_count"] = 0
+                result["character_count_no_spaces"] = 0
+            else:
+                result["character_count"] = len(text_str)
+                result["character_count_no_spaces"] = len(text_str.replace(" ", ""))
+
+        if getattr(self, "count_lines", True):
+            if is_empty:
+                result["line_count"] = 0
+                result["non_empty_lines"] = 0
+            else:
+                lines = text_str.split("\n")
+                result["line_count"] = len(lines)
+                result["non_empty_lines"] = len([line for line in lines if line.strip()])
+
+        return result
+
+    def _text_to_dataframe(self, text: str) -> DataFrame:
+        """Convert markdown-style table text to a DataFrame."""
+        lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+        if not lines:
+            return DataFrame(pd.DataFrame())
+
+        separator = getattr(self, "table_separator", "|")
+        has_header = getattr(self, "has_header", True)
+
+        rows = self._parse_table_rows(lines, separator)
+        if not rows:
+            return DataFrame(pd.DataFrame())
+
+        df = self._create_dataframe(rows, has_header=has_header)
+        self._convert_numeric_columns(df)
+        self.log(f"Converted text to DataFrame: {len(df)} rows, {len(df.columns)} columns")
+        return DataFrame(df)
+
+    def _parse_table_rows(self, lines: list[str], separator: str) -> list[list[str]]:
+        rows = []
+        for line in lines:
+            cleaned_line = line.strip(separator)
+            cells = [cell.strip() for cell in cleaned_line.split(separator)]
+            rows.append(cells)
+        return rows
+
+    def _create_dataframe(self, rows: list[list[str]], *, has_header: bool) -> pd.DataFrame:
+        if has_header and len(rows) > 1:
+            header = rows[0]
+            data_rows = rows[1:]
+            header_col_count = len(header)
+            for i, row in enumerate(data_rows):
+                row_col_count = len(row)
+                if row_col_count != header_col_count:
+                    msg = (
+                        f"Header mismatch: {header_col_count} column(s) in header vs "
+                        f"{row_col_count} column(s) in data row {i + 1}. "
+                        "Please ensure the header has the same number of columns as your data."
+                    )
+                    raise ValueError(msg)
+            return pd.DataFrame(data_rows, columns=header)
+
+        max_cols = max(len(row) for row in rows) if rows else 0
+        columns = [f"col_{i}" for i in range(max_cols)]
+        return pd.DataFrame(rows, columns=columns)
+
+    def _convert_numeric_columns(self, df: pd.DataFrame) -> None:
+        for col in df.columns:
+            with contextlib.suppress(ValueError, TypeError):
+                df[col] = pd.to_numeric(df[col])
+
+    def _case_conversion(self, text: str) -> str:
+        case_type = getattr(self, "case_type", "lowercase")
+        converter = CASE_CONVERTERS.get(case_type)
+        return converter(text) if converter else text
+
+    def _text_replace(self, text: str) -> str:
+        search_pattern = getattr(self, "search_pattern", "")
+        if not search_pattern:
+            return text
+        replacement_text = getattr(self, "replacement_text", "")
+        use_regex = getattr(self, "use_regex", False)
+        if use_regex:
+            try:
+                return re.sub(search_pattern, replacement_text, text)
+            except re.error as e:
+                self.log(f"Invalid regex pattern: {e}")
+                return text
+        return text.replace(search_pattern, replacement_text)
+
+    def _text_extract(self, text: str) -> list[str]:
+        extract_pattern = getattr(self, "extract_pattern", "")
+        if not extract_pattern:
+            return []
+        max_matches = getattr(self, "max_matches", 10)
+        try:
+            matches = re.findall(extract_pattern, text)
+        except re.error as e:
+            msg = f"Invalid regex pattern '{extract_pattern}': {e}"
+            raise ValueError(msg) from e
+        return matches[:max_matches] if max_matches > 0 else matches
+
+    def _text_head(self, text: str) -> str:
+        head_characters = getattr(self, "head_characters", 100)
+        if head_characters < 0:
+            msg = f"Characters from Start must be a non-negative integer, got {head_characters}"
+            raise ValueError(msg)
+        if head_characters == 0:
+            return ""
+        return text[:head_characters]
+
+    def _text_tail(self, text: str) -> str:
+        tail_characters = getattr(self, "tail_characters", 100)
+        if tail_characters < 0:
+            msg = f"Characters from End must be a non-negative integer, got {tail_characters}"
+            raise ValueError(msg)
+        if tail_characters == 0:
+            return ""
+        return text[-tail_characters:]
+
+    def _text_strip(self, text: str) -> str:
+        strip_mode = getattr(self, "strip_mode", "both")
+        strip_characters = getattr(self, "strip_characters", "")
+        text_str = str(text) if text else ""
+        chars_to_strip = strip_characters if strip_characters else None
+        if strip_mode == "left":
+            return text_str.lstrip(chars_to_strip)
+        if strip_mode == "right":
+            return text_str.rstrip(chars_to_strip)
+        return text_str.strip(chars_to_strip)
+
+    def _text_join(self, text: str) -> str:
+        text_input_2 = getattr(self, "text_input_2", "")
+        text1 = str(text) if text else ""
+        text2 = str(text_input_2) if text_input_2 else ""
+        if text1 and text2:
+            return f"{text1}\n{text2}"
+        return text1 or text2
+
+    def _text_clean(self, text: str) -> str:
+        result = text
+        if getattr(self, "remove_extra_spaces", True):
+            # Collapse runs of horizontal whitespace but preserve newlines so
+            # that remove_empty_lines stays effective when both are enabled.
+            result = re.sub(r"[^\S\n]+", " ", result)
+        if getattr(self, "remove_special_chars", False):
+            result = re.sub(r"[^\w\s]", "", result)
+        if getattr(self, "remove_empty_lines", False):
+            lines = [line for line in result.split("\n") if line.strip()]
+            result = "\n".join(lines)
+        return result
+
+    def _format_result_as_text(self, result: Any) -> str:
+        if result is None:
+            return ""
+        if isinstance(result, list):
+            return "\n".join(str(item) for item in result)
+        return str(result)
