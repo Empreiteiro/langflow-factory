@@ -11,6 +11,7 @@ from lfx.base.models.unified_models import (
 )
 from lfx.custom.custom_component.component import Component
 from lfx.io import (
+    BoolInput,
     IntInput,
     MessageTextInput,
     ModelInput,
@@ -46,6 +47,58 @@ DEFAULT_JSON_SCHEMA = """{
   },
   "required": ["name"]
 }"""
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You extract data from the input text into the given JSON Schema. "
+    "Only use values that are stated in the input text or directly inferable from it. "
+    "Never invent, guess or default a value to satisfy the schema: no placeholder names "
+    "('Unknown', 'N/A', 'John Doe'), no made-up numbers or dates, no enum value picked at random. "
+    "Leave an optional field out when the input does not support it. "
+    "Never add keys that are not in the schema. "
+    "If the input text does not contain the data the schema asks for, set extraction_succeeded to false "
+    "and explain what is missing in reason, instead of filling the fields with invented values."
+)
+
+GROUNDING_SYSTEM_PROMPT = (
+    "You are a strict auditor. You are given an input text and data that was extracted from it. "
+    "For every value in the extracted data, decide whether it is explicitly stated in the input text "
+    "or directly inferable from it. "
+    "Placeholders ('Unknown', 'N/A', 'Desconhecido'), guessed numbers or dates, and values chosen only to "
+    "satisfy a schema are NOT supported. "
+    "List every unsupported value. If every value is supported by the input text, return an empty list."
+)
+
+GROUNDING_TOOL: dict[str, Any] = {
+    "name": "GroundingReport",
+    "description": "Report which values of the extracted data are not supported by the input text.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "unsupported": {
+                "type": "array",
+                "description": (
+                    "One entry per value that is not stated in, nor directly inferable from, the input text. "
+                    "Empty when every value is supported."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "description": "Path of the offending field, e.g. 'name' or '0/age'.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Why the value is not supported by the input text.",
+                        },
+                    },
+                    "required": ["field", "reason"],
+                },
+            }
+        },
+        "required": ["unsupported"],
+    },
+}
 
 MAX_REPORTED_ERRORS = 10
 
@@ -101,13 +154,7 @@ class JSONSchemaComponent(Component):
             name="system_prompt",
             display_name="Format Instructions",
             info="Instructions that tell the model how to fill the schema.",
-            value=(
-                "You are an AI that extracts and generates data conforming to a JSON Schema. "
-                "Populate every required field and respect each field's type and allowed values (enum). "
-                "When a value is missing or ambiguous in the input, choose the most reasonable value that "
-                "still satisfies the schema; use null only for fields that are not required. "
-                "Never invent keys that are not in the schema. Always return valid data in the expected format."
-            ),
+            value=DEFAULT_SYSTEM_PROMPT,
             required=True,
             advanced=True,
         ),
@@ -126,6 +173,27 @@ class JSONSchemaComponent(Component):
                 "Set to 0 to route the first invalid output straight to the Invalid output."
             ),
             value=1,
+            advanced=True,
+        ),
+        BoolInput(
+            name="reject_extra_fields",
+            display_name="Reject Extra Fields",
+            info=(
+                "Reject output that contains keys the schema does not declare. "
+                "JSON Schema allows extra keys by default; this enforces the schema as a closed contract."
+            ),
+            value=True,
+            advanced=True,
+        ),
+        BoolInput(
+            name="verify_against_input",
+            display_name="Verify Against Input",
+            info=(
+                "Run a second pass asking the model whether every extracted value is actually supported by "
+                "the input text. Catches values that satisfy the schema but were invented (placeholder names, "
+                "guessed numbers, an enum picked at random). Costs one extra model call."
+            ),
+            value=True,
             advanced=True,
         ),
     ]
@@ -147,6 +215,10 @@ class JSONSchemaComponent(Component):
 
     # Keys that signal the provided JSON is already a schema rather than an example instance.
     _SCHEMA_MARKERS = ("type", "properties", "$schema", "items", "$ref", "anyOf", "allOf", "oneOf", "enum")
+    # Where a nested schema can hide, for the strict-mode rewrite.
+    _SUBSCHEMA_KEYS = ("items", "additionalItems", "contains", "not", "if", "then", "else")
+    _SUBSCHEMA_MAP_KEYS = ("properties", "$defs", "definitions", "patternProperties")
+    _SUBSCHEMA_LIST_KEYS = ("anyOf", "allOf", "oneOf", "prefixItems")
 
     def update_build_config(self, build_config: dict, field_value: str, field_name: str | None = None):
         """Dynamically update build config with user-filtered model options."""
@@ -210,34 +282,74 @@ class JSONSchemaComponent(Component):
             "properties": {k: self._infer_type(v) for k, v in example.items()},
         }
 
-    def _build_tool_schema(self, schema: dict[str, Any]) -> tuple[dict[str, Any], str, bool]:
-        """Return (tool_dict, schema_name, wrapped_as_list).
+    def _close_schema(self, schema: Any) -> Any:
+        """Return a copy of the schema where every declared object rejects undeclared keys.
 
-        A top-level array schema is wrapped in an object under the "items" key, because tool
-        parameters must be an object. `wrapped_as_list` tells the caller to unwrap the result.
+        JSON Schema allows extra keys unless the author says otherwise, so a model can pad the
+        output with keys nobody asked for and still validate. This closes that gap for validation.
+        """
+        if isinstance(schema, list):
+            return [self._close_schema(item) for item in schema]
+        if not isinstance(schema, dict):
+            return schema
+
+        closed = dict(schema)
+        for key in self._SUBSCHEMA_KEYS:
+            if key in closed:
+                closed[key] = self._close_schema(closed[key])
+        for key in self._SUBSCHEMA_MAP_KEYS:
+            if isinstance(closed.get(key), dict):
+                closed[key] = {name: self._close_schema(sub) for name, sub in closed[key].items()}
+        for key in self._SUBSCHEMA_LIST_KEYS:
+            if isinstance(closed.get(key), list):
+                closed[key] = [self._close_schema(sub) for sub in closed[key]]
+
+        declares_object = "properties" in closed or closed.get("type") == "object"
+        already_constrained = any(
+            key in closed for key in ("additionalProperties", "unevaluatedProperties", "patternProperties")
+        )
+        # $ref/composition keywords bring in properties this copy cannot see, so leave those open.
+        composes = any(key in closed for key in ("$ref", "anyOf", "allOf", "oneOf"))
+        if declares_object and not already_constrained and not composes:
+            closed["additionalProperties"] = False
+        return closed
+
+    def _build_tool(self, schema: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """Wrap the user schema in an envelope the model can also use to report failure.
+
+        `tool_choice` forces the model to call the tool, so without `extraction_succeeded` the model
+        has no way to say "the input does not contain this data" and is pushed into inventing values.
+        The payload itself stays under "data", untouched, so any top-level type works.
         """
         schema_name = (self.schema_name or schema.get("title") or "OutputModel").strip() or "OutputModel"
         description = schema.get("description", f"Output conforming to {schema_name}.")
 
-        wrapped_as_list = schema.get("type") == "array"
-        if wrapped_as_list:
-            parameters = {
-                "type": "object",
-                "properties": {"items": schema},
-                "required": ["items"],
-            }
-        else:
-            parameters = schema
-
+        parameters = {
+            "type": "object",
+            "description": description,
+            "properties": {
+                "extraction_succeeded": {
+                    "type": "boolean",
+                    "description": (
+                        "True only when the input text actually contains the data the schema asks for. "
+                        "False when the data is absent and would have to be invented."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "When extraction_succeeded is false, what is missing from the input text.",
+                },
+                "data": schema,
+            },
+            "required": ["extraction_succeeded"],
+        }
         tool = {"name": schema_name, "description": description, "parameters": parameters}
-        return tool, schema_name, wrapped_as_list
+        return tool, schema_name
 
-    def _run_extraction(
-        self, llm, tool: dict[str, Any], schema_name: str, *, wrapped_as_list: bool, prompt: str
-    ) -> Any:
-        """Run the LLM against the schema and return a dict or a list of dicts."""
+    def _call_extractor(self, llm, tool: dict[str, Any], tool_name: str, system_message: str, input_value: str) -> Any:
+        """Run one structured-output call through trustcall."""
         try:
-            extractor = create_extractor(llm, tools=[tool], tool_choice=schema_name)
+            extractor = create_extractor(llm, tools=[tool], tool_choice=tool_name)
         except NotImplementedError as exc:
             msg = f"{llm.__class__.__name__} does not support structured output."
             raise TypeError(msg) from exc
@@ -249,13 +361,14 @@ class JSONSchemaComponent(Component):
         }
         result = get_chat_result(
             runnable=extractor,
-            system_message=prompt,
-            input_value=self.input_value,
+            system_message=system_message,
+            input_value=input_value,
             config=config_dict,
         )
 
         if not isinstance(result, dict):
-            return result
+            msg = f"Unexpected response from the model: {type(result).__name__}."
+            raise ValueError(msg)
 
         responses = result.get("responses", [])
         if not responses:
@@ -263,35 +376,38 @@ class JSONSchemaComponent(Component):
             raise ValueError(msg)
 
         first_response = responses[0]
-        data = first_response.model_dump() if isinstance(first_response, BaseModel) else first_response
+        return first_response.model_dump() if isinstance(first_response, BaseModel) else first_response
 
-        if wrapped_as_list and isinstance(data, dict):
-            return data.get("items", [])
-        return data
+    def _run_extraction(self, llm, tool: dict[str, Any], tool_name: str, prompt: str) -> tuple[Any, bool, str]:
+        """Return (payload, succeeded, reason) from one extraction attempt."""
+        envelope = self._call_extractor(llm, tool, tool_name, prompt, self.input_value)
+        if not isinstance(envelope, dict):
+            msg = f"Unexpected response from the model: {type(envelope).__name__}."
+            raise ValueError(msg)
 
-    def _validate_payload(self, payload: Any, parameters: dict[str, Any], *, wrapped_as_list: bool) -> list[str]:
+        succeeded = bool(envelope.get("extraction_succeeded", True))
+        reason = str(envelope.get("reason") or "")
+        payload = envelope.get("data")
+        return payload, succeeded, reason
+
+    def _validate_payload(self, payload: Any, schema: dict[str, Any]) -> list[str]:
         """Return a list of human-readable schema violations. An empty list means the payload is valid."""
-        target = {"items": payload} if wrapped_as_list else payload
-
         try:
             from jsonschema import Draft202012Validator
         except ImportError:
-            return self._validate_with_pydantic(target, parameters, wrapped_as_list=wrapped_as_list)
+            return self._validate_with_pydantic(payload, schema)
 
         try:
-            validator = Draft202012Validator(parameters)
-            errors = list(validator.iter_errors(target))
+            validator = Draft202012Validator(schema)
+            errors = list(validator.iter_errors(payload))
         except Exception as exc:  # noqa: BLE001
             msg = f"The provided JSON Schema is not a valid schema: {exc}"
             raise ValueError(msg) from exc
 
-        messages = [
-            f"{self._error_path(error.absolute_path, wrapped_as_list=wrapped_as_list)}: {error.message}"
-            for error in errors
-        ]
+        messages = [f"{self._error_path(error.absolute_path)}: {error.message}" for error in errors]
         return self._truncate_errors(messages)
 
-    def _validate_with_pydantic(self, target: Any, parameters: dict[str, Any], *, wrapped_as_list: bool) -> list[str]:
+    def _validate_with_pydantic(self, payload: Any, schema: dict[str, Any]) -> list[str]:
         """Fallback validation via dydantic, the schema-to-pydantic library trustcall already depends on.
 
         Used only when `jsonschema` is not installed. It is best-effort: pydantic coerces some
@@ -301,27 +417,33 @@ class JSONSchemaComponent(Component):
         from dydantic import create_model_from_schema
         from pydantic import ValidationError
 
+        # dydantic needs an object at the root, so a top-level array is validated through a wrapper.
+        wrapped = schema.get("type") == "array"
+        if wrapped:
+            schema = {"type": "object", "properties": {"items": schema}, "required": ["items"]}
+            payload = {"items": payload}
+
         try:
-            model = create_model_from_schema(parameters)
+            model = create_model_from_schema(schema)
         except Exception as exc:  # noqa: BLE001
             msg = f"The provided JSON Schema is not a valid schema: {exc}"
             raise ValueError(msg) from exc
 
         try:
-            model.model_validate(target)
+            model.model_validate(payload)
         except ValidationError as exc:
             messages = [
-                f"{self._error_path(error['loc'], wrapped_as_list=wrapped_as_list)}: {error['msg']}"
+                f"{self._error_path(error['loc'], strip_first='items' if wrapped else None)}: {error['msg']}"
                 for error in exc.errors()
             ]
             return self._truncate_errors(messages)
         return []
 
     @staticmethod
-    def _error_path(path, *, wrapped_as_list: bool) -> str:
-        """Render the location of a violation, hiding the internal "items" wrapper used for arrays."""
+    def _error_path(path, strip_first: str | None = None) -> str:
+        """Render the location of a violation as a path, e.g. `0/name`."""
         parts = [str(part) for part in path]
-        if wrapped_as_list and parts and parts[0] == "items":
+        if strip_first and parts and parts[0] == strip_first:
             parts = parts[1:]
         return "/".join(parts) or "<root>"
 
@@ -332,11 +454,42 @@ class JSONSchemaComponent(Component):
         hidden = len(messages) - MAX_REPORTED_ERRORS
         return [*messages[:MAX_REPORTED_ERRORS], f"... and {hidden} more validation error(s)."]
 
+    def _check_grounding(self, llm, payload: Any) -> list[str]:
+        """Ask the model which extracted values are not supported by the input text.
+
+        Schema validation only checks shape: an invented name of the right type passes every
+        constraint. This is what catches it. Errors from the audit call itself are logged and
+        ignored, so a transient failure of the auditor does not fail an otherwise valid output.
+        """
+        extracted = json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+        audit_input = f"INPUT TEXT:\n{self.input_value}\n\nEXTRACTED DATA:\n{extracted}"
+        try:
+            report = self._call_extractor(
+                llm, GROUNDING_TOOL, GROUNDING_TOOL["name"], GROUNDING_SYSTEM_PROMPT, audit_input
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"Could not verify the output against the input, skipping that check: {exc}")
+            return []
+
+        if not isinstance(report, dict):
+            return []
+        unsupported = report.get("unsupported") or []
+        messages = [
+            f"{item.get('field') or '<root>'}: not supported by the input text - {item.get('reason', '')}".strip()
+            for item in unsupported
+            if isinstance(item, dict)
+        ]
+        return self._truncate_errors(messages)
+
     def _extract_and_validate(self) -> tuple[Any, list[str], int]:
         """Extract, validate and retry with the validation errors fed back into the prompt.
 
         Returns (payload, errors, attempts). The LLM is only called once per component run, no
         matter how many outputs are connected, because the result is cached.
+
+        Schema violations are retried; a model that reports it could not extract the data, and
+        values that are not supported by the input, are not - retrying only invites another
+        invented answer.
         """
         if self._extraction_result is not None:
             return self._extraction_result
@@ -347,8 +500,8 @@ class JSONSchemaComponent(Component):
             raise TypeError(msg)
 
         schema = self._parse_json_schema()
-        tool, schema_name, wrapped_as_list = self._build_tool_schema(schema)
-        parameters = tool["parameters"]
+        tool, tool_name = self._build_tool(schema)
+        validation_schema = self._close_schema(schema) if getattr(self, "reject_extra_fields", True) else schema
 
         attempts = max(int(getattr(self, "max_retries", 1) or 0), 0) + 1
         base_prompt = self.system_prompt
@@ -359,7 +512,7 @@ class JSONSchemaComponent(Component):
 
         for attempt in range(1, attempts + 1):
             try:
-                payload = self._run_extraction(llm, tool, schema_name, wrapped_as_list=wrapped_as_list, prompt=prompt)
+                payload, succeeded, reason = self._run_extraction(llm, tool, tool_name, prompt)
             except TypeError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -369,8 +522,25 @@ class JSONSchemaComponent(Component):
                 continue
 
             extraction_error = None
-            errors = self._validate_payload(payload, parameters, wrapped_as_list=wrapped_as_list)
+
+            if not succeeded:
+                detail = reason or "the input text does not contain the data the schema asks for"
+                failure = f"<root>: the model could not extract the data - {detail}"
+                self._extraction_result = (payload, [failure], attempt)
+                return self._extraction_result
+
+            if payload is None:
+                errors = ["<root>: the model reported success but returned no data."]
+            else:
+                errors = self._validate_payload(payload, validation_schema)
+
             if not errors:
+                if getattr(self, "verify_against_input", True):
+                    errors = self._check_grounding(llm, payload)
+                    if errors:
+                        self.log(f"Attempt {attempt}/{attempts} produced values not supported by the input: {errors}")
+                        self._extraction_result = (payload, errors, attempt)
+                        return self._extraction_result
                 self._extraction_result = (payload, [], attempt)
                 return self._extraction_result
 
@@ -380,7 +550,9 @@ class JSONSchemaComponent(Component):
                 f"{base_prompt}\n\n"
                 f"A previous attempt returned this output:\n{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
                 f"It was rejected because it violates the schema:\n{violations}\n\n"
-                f"Return a corrected output that fixes every violation above."
+                f"Return a corrected output that fixes every violation above. "
+                f"Do not invent values to satisfy the schema: if the input text does not contain the data, "
+                f"set extraction_succeeded to false instead."
             )
 
         if extraction_error is not None:
