@@ -11,6 +11,7 @@ from lfx.base.models.unified_models import (
 )
 from lfx.custom.custom_component.component import Component
 from lfx.io import (
+    IntInput,
     MessageTextInput,
     ModelInput,
     MultilineInput,
@@ -18,7 +19,6 @@ from lfx.io import (
     SecretStrInput,
 )
 from lfx.schema.data import Data
-from lfx.schema.dataframe import DataFrame
 
 DEFAULT_JSON_SCHEMA = """{
   "title": "Person",
@@ -47,6 +47,8 @@ DEFAULT_JSON_SCHEMA = """{
   "required": ["name"]
 }"""
 
+MAX_REPORTED_ERRORS = 10
+
 
 class JSONSchemaComponent(Component):
     display_name = "JSON Schema"
@@ -54,6 +56,11 @@ class JSONSchemaComponent(Component):
     documentation: str = "https://json-schema.org/understanding-json-schema/"
     name = "JSONSchema"
     icon = "braces"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._extraction_result: tuple[Any, list[str], int] | None = None
+        self._excluded_outputs: set[str] = set()
 
     inputs = [
         ModelInput(
@@ -110,18 +117,31 @@ class JSONSchemaComponent(Component):
             info="Optional name for the schema. Defaults to the schema's 'title' or 'OutputModel'.",
             advanced=True,
         ),
+        IntInput(
+            name="max_retries",
+            display_name="Max Retries",
+            info=(
+                "How many extra attempts to make when the output does not satisfy the schema. "
+                "Each retry sends the validation errors back to the model. "
+                "Set to 0 to route the first invalid output straight to the Invalid output."
+            ),
+            value=1,
+            advanced=True,
+        ),
     ]
 
     outputs = [
         Output(
-            name="structured_output",
-            display_name="Structured Output",
-            method="build_structured_output",
+            display_name="Valid",
+            name="valid_output",
+            method="build_valid_output",
+            group_outputs=True,
         ),
         Output(
-            name="dataframe_output",
-            display_name="DataFrame",
-            method="build_structured_dataframe",
+            display_name="Invalid",
+            name="invalid_output",
+            method="build_invalid_output",
+            group_outputs=True,
         ),
     ]
 
@@ -131,6 +151,11 @@ class JSONSchemaComponent(Component):
     def update_build_config(self, build_config: dict, field_value: str, field_name: str | None = None):
         """Dynamically update build config with user-filtered model options."""
         return handle_model_input_update(self, build_config, field_value, field_name)
+
+    def _pre_run_setup(self) -> None:
+        """Reset per-run state before each build so every execution re-extracts and re-validates."""
+        self._extraction_result = None
+        self._excluded_outputs = set()
 
     def _parse_json_schema(self) -> dict[str, Any]:
         """Parse the JSON Schema input into a dict, repairing minor JSON errors if needed."""
@@ -151,6 +176,8 @@ class JSONSchemaComponent(Component):
         if not isinstance(schema, dict):
             msg = "JSON Schema must be a JSON object."
             raise ValueError(msg)
+        if not self._looks_like_schema(schema):
+            schema = self._infer_schema_from_example(schema)
         return schema
 
     def _looks_like_schema(self, schema: dict[str, Any]) -> bool:
@@ -189,9 +216,6 @@ class JSONSchemaComponent(Component):
         A top-level array schema is wrapped in an object under the "items" key, because tool
         parameters must be an object. `wrapped_as_list` tells the caller to unwrap the result.
         """
-        if not self._looks_like_schema(schema):
-            schema = self._infer_schema_from_example(schema)
-
         schema_name = (self.schema_name or schema.get("title") or "OutputModel").strip() or "OutputModel"
         description = schema.get("description", f"Output conforming to {schema_name}.")
 
@@ -208,17 +232,10 @@ class JSONSchemaComponent(Component):
         tool = {"name": schema_name, "description": description, "parameters": parameters}
         return tool, schema_name, wrapped_as_list
 
-    def _run_extraction(self) -> Any:
+    def _run_extraction(
+        self, llm, tool: dict[str, Any], schema_name: str, *, wrapped_as_list: bool, prompt: str
+    ) -> Any:
         """Run the LLM against the schema and return a dict or a list of dicts."""
-        llm = get_llm(model=self.model, user_id=self.user_id, api_key=self.api_key)
-
-        if not hasattr(llm, "with_structured_output"):
-            msg = "Language model does not support structured output."
-            raise TypeError(msg)
-
-        schema = self._parse_json_schema()
-        tool, schema_name, wrapped_as_list = self._build_tool_schema(schema)
-
         try:
             extractor = create_extractor(llm, tools=[tool], tool_choice=schema_name)
         except NotImplementedError as exc:
@@ -232,7 +249,7 @@ class JSONSchemaComponent(Component):
         }
         result = get_chat_result(
             runnable=extractor,
-            system_message=self.system_prompt,
+            system_message=prompt,
             input_value=self.input_value,
             config=config_dict,
         )
@@ -252,32 +269,185 @@ class JSONSchemaComponent(Component):
             return data.get("items", [])
         return data
 
-    def build_structured_output(self) -> Data:
-        output = self._run_extraction()
+    def _validate_payload(self, payload: Any, parameters: dict[str, Any], *, wrapped_as_list: bool) -> list[str]:
+        """Return a list of human-readable schema violations. An empty list means the payload is valid."""
+        target = {"items": payload} if wrapped_as_list else payload
+
+        try:
+            from jsonschema import Draft202012Validator
+        except ImportError:
+            return self._validate_with_pydantic(target, parameters, wrapped_as_list=wrapped_as_list)
+
+        try:
+            validator = Draft202012Validator(parameters)
+            errors = list(validator.iter_errors(target))
+        except Exception as exc:  # noqa: BLE001
+            msg = f"The provided JSON Schema is not a valid schema: {exc}"
+            raise ValueError(msg) from exc
+
+        messages = [
+            f"{self._error_path(error.absolute_path, wrapped_as_list=wrapped_as_list)}: {error.message}"
+            for error in errors
+        ]
+        return self._truncate_errors(messages)
+
+    def _validate_with_pydantic(self, target: Any, parameters: dict[str, Any], *, wrapped_as_list: bool) -> list[str]:
+        """Fallback validation via dydantic, the schema-to-pydantic library trustcall already depends on.
+
+        Used only when `jsonschema` is not installed. It is best-effort: pydantic coerces some
+        scalars and dydantic does not enforce every JSON Schema keyword, so it catches missing
+        required fields and wrong types but can let subtler constraints through.
+        """
+        from dydantic import create_model_from_schema
+        from pydantic import ValidationError
+
+        try:
+            model = create_model_from_schema(parameters)
+        except Exception as exc:  # noqa: BLE001
+            msg = f"The provided JSON Schema is not a valid schema: {exc}"
+            raise ValueError(msg) from exc
+
+        try:
+            model.model_validate(target)
+        except ValidationError as exc:
+            messages = [
+                f"{self._error_path(error['loc'], wrapped_as_list=wrapped_as_list)}: {error['msg']}"
+                for error in exc.errors()
+            ]
+            return self._truncate_errors(messages)
+        return []
+
+    @staticmethod
+    def _error_path(path, *, wrapped_as_list: bool) -> str:
+        """Render the location of a violation, hiding the internal "items" wrapper used for arrays."""
+        parts = [str(part) for part in path]
+        if wrapped_as_list and parts and parts[0] == "items":
+            parts = parts[1:]
+        return "/".join(parts) or "<root>"
+
+    @staticmethod
+    def _truncate_errors(messages: list[str]) -> list[str]:
+        if len(messages) <= MAX_REPORTED_ERRORS:
+            return messages
+        hidden = len(messages) - MAX_REPORTED_ERRORS
+        return [*messages[:MAX_REPORTED_ERRORS], f"... and {hidden} more validation error(s)."]
+
+    def _extract_and_validate(self) -> tuple[Any, list[str], int]:
+        """Extract, validate and retry with the validation errors fed back into the prompt.
+
+        Returns (payload, errors, attempts). The LLM is only called once per component run, no
+        matter how many outputs are connected, because the result is cached.
+        """
+        if self._extraction_result is not None:
+            return self._extraction_result
+
+        llm = get_llm(model=self.model, user_id=self.user_id, api_key=self.api_key)
+        if not hasattr(llm, "with_structured_output"):
+            msg = "Language model does not support structured output."
+            raise TypeError(msg)
+
+        schema = self._parse_json_schema()
+        tool, schema_name, wrapped_as_list = self._build_tool_schema(schema)
+        parameters = tool["parameters"]
+
+        attempts = max(int(getattr(self, "max_retries", 1) or 0), 0) + 1
+        base_prompt = self.system_prompt
+        prompt = base_prompt
+        payload: Any = None
+        errors: list[str] = []
+        extraction_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = self._run_extraction(llm, tool, schema_name, wrapped_as_list=wrapped_as_list, prompt=prompt)
+            except TypeError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # Keep trying: a transient failure may still succeed on the next attempt.
+                extraction_error = exc
+                self.log(f"Attempt {attempt}/{attempts} failed to produce output: {exc}")
+                continue
+
+            extraction_error = None
+            errors = self._validate_payload(payload, parameters, wrapped_as_list=wrapped_as_list)
+            if not errors:
+                self._extraction_result = (payload, [], attempt)
+                return self._extraction_result
+
+            self.log(f"Attempt {attempt}/{attempts} produced output that violates the schema: {errors}")
+            violations = "\n".join(f"- {error}" for error in errors)
+            prompt = (
+                f"{base_prompt}\n\n"
+                f"A previous attempt returned this output:\n{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+                f"It was rejected because it violates the schema:\n{violations}\n\n"
+                f"Return a corrected output that fixes every violation above."
+            )
+
+        if extraction_error is not None:
+            # Never produced anything: this is a real failure, not a schema violation.
+            msg = f"Could not get an output from the model after {attempts} attempt(s): {extraction_error}"
+            raise ValueError(msg) from extraction_error
+
+        self._extraction_result = (payload, errors, attempts)
+        return self._extraction_result
+
+    def _deactivate_branches(self, output_names: list[str]) -> None:
+        """Deactivate the given output branches so their downstream nodes do not execute.
+
+        Mirrors SmartRouterComponent: `stop()` marks the branch INACTIVE for the current
+        scheduling pass, while `exclude_branches_conditionally()` records a persistent exclusion
+        so a re-activated branch that reconverges on a shared downstream node stays excluded.
+        """
+        for name in output_names:
+            self.stop(name)
+        # The persistent exclusion needs a real vertex/graph. Skip it when the component is
+        # exercised without one (e.g. direct unit tests that mock `stop`).
+        if self._vertex is None:
+            return
+        self._excluded_outputs.update(output_names)
+        self._vertex.graph.exclude_branches_conditionally(self._id, sorted(self._excluded_outputs))
+
+    @staticmethod
+    def _as_data_payload(output: Any) -> dict[str, Any]:
+        """Shape the validated output as the JSON payload carried by the Valid output."""
+        if isinstance(output, dict):
+            return output
         if isinstance(output, list):
-            if not output:
-                msg = "No structured output returned."
-                raise ValueError(msg)
             if len(output) == 1 and isinstance(output[0], dict):
-                result = Data(data=output[0])
-            else:
-                result = Data(data={"results": output})
-        elif isinstance(output, dict):
-            result = Data(data=output)
-        else:
-            result = Data(data={"result": output})
+                return output[0]
+            return {"results": output}
+        return {"result": output}
+
+    def build_valid_output(self) -> Data:
+        """Emit the schema-conforming output, or deactivate this branch when validation failed."""
+        payload, errors, attempts = self._extract_and_validate()
+
+        if errors:
+            self._deactivate_branches(["valid_output"])
+            violations = "\n".join(errors)
+            self.status = f"Output rejected after {attempts} attempt(s):\n{violations}"
+            return Data(data={})
+
+        self._deactivate_branches(["invalid_output"])
+        result = Data(data=self._as_data_payload(payload))
         self.status = result
         return result
 
-    def build_structured_dataframe(self) -> DataFrame:
-        output = self._run_extraction()
-        if isinstance(output, list):
-            if not output:
-                msg = "No structured output returned."
-                raise ValueError(msg)
-            data_list = [Data(data=item) if isinstance(item, dict) else Data(data={"value": item}) for item in output]
-        elif isinstance(output, dict):
-            data_list = [Data(data=output)]
-        else:
-            data_list = [Data(data={"value": output})]
-        return DataFrame(data_list)
+    def build_invalid_output(self) -> Data:
+        """Emit the rejected output together with the validation errors, for downstream handling."""
+        payload, errors, attempts = self._extract_and_validate()
+
+        if not errors:
+            self._deactivate_branches(["invalid_output"])
+            return Data(data={})
+
+        self._deactivate_branches(["valid_output"])
+        result = Data(
+            data={
+                "errors": errors,
+                "attempts": attempts,
+                "output": payload,
+            }
+        )
+        self.status = result
+        return result
