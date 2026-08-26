@@ -5,12 +5,17 @@ from pydantic import BaseModel
 from trustcall import create_extractor
 
 from lfx.base.models.chat_result import get_chat_result
+from lfx.base.models.unified_models import (
+    get_llm,
+    handle_model_input_update,
+)
 from lfx.custom.custom_component.component import Component
 from lfx.io import (
-    HandleInput,
     MessageTextInput,
+    ModelInput,
     MultilineInput,
     Output,
+    SecretStrInput,
 )
 from lfx.schema.data import Data
 from lfx.schema.dataframe import DataFrame
@@ -45,22 +50,25 @@ DEFAULT_JSON_SCHEMA = """{
 
 class JSONSchemaComponent(Component):
     display_name = "JSON Schema"
-    description = (
-        "Uses an LLM to generate data that conforms to a user-provided JSON Schema. "
-        "Like Structured Output, but the schema is written directly as JSON, so each key "
-        "can constrain its type, allowed values (enum), nesting and whether it is required."
-    )
+    description = "Uses an LLM to generate data that conforms to a JSON Schema."
     documentation: str = "https://json-schema.org/understanding-json-schema/"
     name = "JSONSchema"
     icon = "braces"
 
     inputs = [
-        HandleInput(
-            name="llm",
+        ModelInput(
+            name="model",
             display_name="Language Model",
-            info="The language model used to generate the schema-conforming output.",
-            input_types=["LanguageModel"],
+            info="Select your model provider",
+            real_time_refresh=True,
             required=True,
+        ),
+        SecretStrInput(
+            name="api_key",
+            display_name="API Key",
+            info="Overrides global provider settings. Leave blank to use your pre-configured API Key.",
+            real_time_refresh=True,
+            advanced=True,
         ),
         MultilineInput(
             name="input_value",
@@ -119,6 +127,10 @@ class JSONSchemaComponent(Component):
 
     # Keys that signal the provided JSON is already a schema rather than an example instance.
     _SCHEMA_MARKERS = ("type", "properties", "$schema", "items", "$ref", "anyOf", "allOf", "oneOf", "enum")
+
+    def update_build_config(self, build_config: dict, field_value: str, field_name: str | None = None):
+        """Dynamically update build config with user-filtered model options."""
+        return handle_model_input_update(self, build_config, field_value, field_name)
 
     def _parse_json_schema(self) -> dict[str, Any]:
         """Parse the JSON Schema input into a dict, repairing minor JSON errors if needed."""
@@ -198,7 +210,9 @@ class JSONSchemaComponent(Component):
 
     def _run_extraction(self) -> Any:
         """Run the LLM against the schema and return a dict or a list of dicts."""
-        if not hasattr(self.llm, "with_structured_output"):
+        llm = get_llm(model=self.model, user_id=self.user_id, api_key=self.api_key)
+
+        if not hasattr(llm, "with_structured_output"):
             msg = "Language model does not support structured output."
             raise TypeError(msg)
 
@@ -206,9 +220,9 @@ class JSONSchemaComponent(Component):
         tool, schema_name, wrapped_as_list = self._build_tool_schema(schema)
 
         try:
-            extractor = create_extractor(self.llm, tools=[tool], tool_choice=schema_name)
+            extractor = create_extractor(llm, tools=[tool], tool_choice=schema_name)
         except NotImplementedError as exc:
-            msg = f"{self.llm.__class__.__name__} does not support structured output."
+            msg = f"{llm.__class__.__name__} does not support structured output."
             raise TypeError(msg) from exc
 
         config_dict = {
