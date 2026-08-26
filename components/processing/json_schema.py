@@ -12,6 +12,7 @@ from lfx.base.models.unified_models import (
 from lfx.custom.custom_component.component import Component
 from lfx.io import (
     BoolInput,
+    DropdownInput,
     IntInput,
     MessageTextInput,
     ModelInput,
@@ -57,6 +58,11 @@ DEFAULT_SYSTEM_PROMPT = (
     "Never add keys that are not in the schema. "
     "If the input text does not contain the data the schema asks for, set extraction_succeeded to false "
     "and explain what is missing in reason, instead of filling the fields with invented values."
+)
+
+PARTIAL_MODE_INSTRUCTION = (
+    "When the input text does not support a field, set that field to null instead of leaving it out. "
+    "Only set extraction_succeeded to false when the input supports no field at all."
 )
 
 GROUNDING_SYSTEM_PROMPT = (
@@ -112,7 +118,7 @@ class JSONSchemaComponent(Component):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._extraction_result: tuple[Any, list[str], int] | None = None
+        self._extraction_result: tuple[Any, list[str], int, list[str]] | None = None
         self._excluded_outputs: set[str] = set()
 
     inputs = [
@@ -149,6 +155,17 @@ class JSONSchemaComponent(Component):
             ),
             value=DEFAULT_JSON_SCHEMA,
             required=True,
+        ),
+        DropdownInput(
+            name="output_mode",
+            display_name="Mode",
+            info=(
+                "Strict: any field the input does not support rejects the whole output, which goes to Invalid. "
+                "Partial: unsupported fields come back as null and the rest is emitted as Valid; the output is "
+                "only rejected when nothing at all could be extracted."
+            ),
+            options=["Strict", "Partial"],
+            value="Strict",
         ),
         MultilineInput(
             name="system_prompt",
@@ -191,7 +208,8 @@ class JSONSchemaComponent(Component):
             info=(
                 "Run a second pass asking the model whether every extracted value is actually supported by "
                 "the input text. Catches values that satisfy the schema but were invented (placeholder names, "
-                "guessed numbers, an enum picked at random). Costs one extra model call."
+                "guessed numbers, an enum picked at random). In Partial mode those values are set to null "
+                "instead of rejecting the output. Costs one extra model call."
             ),
             value=True,
             advanced=True,
@@ -314,6 +332,85 @@ class JSONSchemaComponent(Component):
             closed["additionalProperties"] = False
         return closed
 
+    def _relax_required(self, schema: Any) -> Any:
+        """Return a copy of the schema with every `required` list dropped.
+
+        Partial mode is allowed to come back without the fields the input does not support, so
+        `required` stops being a rejection reason there. Types and enums are still enforced on the
+        values that are present.
+        """
+        if isinstance(schema, list):
+            return [self._relax_required(item) for item in schema]
+        if not isinstance(schema, dict):
+            return schema
+
+        relaxed = {key: value for key, value in schema.items() if key != "required"}
+        for key in self._SUBSCHEMA_KEYS:
+            if key in relaxed:
+                relaxed[key] = self._relax_required(relaxed[key])
+        for key in self._SUBSCHEMA_MAP_KEYS:
+            if isinstance(relaxed.get(key), dict):
+                relaxed[key] = {name: self._relax_required(sub) for name, sub in relaxed[key].items()}
+        for key in self._SUBSCHEMA_LIST_KEYS:
+            if isinstance(relaxed.get(key), list):
+                relaxed[key] = [self._relax_required(sub) for sub in relaxed[key]]
+        return relaxed
+
+    @classmethod
+    def _drop_nulls(cls, payload: Any) -> Any:
+        """Return a copy of the payload without its null values.
+
+        Validating what is left means a null never has to be allowed by the schema: the fields that
+        carry a value are still checked against their type and enum.
+        """
+        if isinstance(payload, dict):
+            return {key: cls._drop_nulls(value) for key, value in payload.items() if value is not None}
+        if isinstance(payload, list):
+            return [cls._drop_nulls(item) for item in payload if item is not None]
+        return payload
+
+    @classmethod
+    def _has_any_value(cls, payload: Any) -> bool:
+        """True when the payload carries at least one value that is not null or empty."""
+        if payload is None:
+            return False
+        if isinstance(payload, dict):
+            return any(cls._has_any_value(value) for value in payload.values())
+        if isinstance(payload, list):
+            return any(cls._has_any_value(item) for item in payload)
+        if isinstance(payload, str):
+            return bool(payload.strip())
+        return True
+
+    @classmethod
+    def _null_out(cls, payload: Any, path: str) -> bool:
+        """Set the value at `path` (e.g. `name`, `0/age`, `items/0/name`) to null.
+
+        Returns False when the path does not exist in the payload, so the caller can report a
+        field it was told about but could not clear instead of silently emitting it.
+        """
+        parts = [part for part in path.replace(".", "/").strip("/").split("/") if part]
+        if not parts:
+            return False
+
+        target = payload
+        for part in parts[:-1]:
+            if isinstance(target, dict) and part in target:
+                target = target[part]
+            elif isinstance(target, list) and part.isdigit() and int(part) < len(target):
+                target = target[int(part)]
+            else:
+                return False
+
+        last = parts[-1]
+        if isinstance(target, dict) and last in target:
+            target[last] = None
+            return True
+        if isinstance(target, list) and last.isdigit() and int(last) < len(target):
+            target[int(last)] = None
+            return True
+        return False
+
     def _build_tool(self, schema: dict[str, Any]) -> tuple[dict[str, Any], str]:
         """Wrap the user schema in an envelope the model can also use to report failure.
 
@@ -390,8 +487,10 @@ class JSONSchemaComponent(Component):
         payload = envelope.get("data")
         return payload, succeeded, reason
 
-    def _validate_payload(self, payload: Any, schema: dict[str, Any]) -> list[str]:
+    def _validate_payload(self, payload: Any, schema: dict[str, Any], *, partial: bool = False) -> list[str]:
         """Return a list of human-readable schema violations. An empty list means the payload is valid."""
+        if partial:
+            payload = self._drop_nulls(payload)
         try:
             from jsonschema import Draft202012Validator
         except ImportError:
@@ -454,12 +553,13 @@ class JSONSchemaComponent(Component):
         hidden = len(messages) - MAX_REPORTED_ERRORS
         return [*messages[:MAX_REPORTED_ERRORS], f"... and {hidden} more validation error(s)."]
 
-    def _check_grounding(self, llm, payload: Any) -> list[str]:
+    def _check_grounding(self, llm, payload: Any) -> list[tuple[str, str]]:
         """Ask the model which extracted values are not supported by the input text.
 
-        Schema validation only checks shape: an invented name of the right type passes every
-        constraint. This is what catches it. Errors from the audit call itself are logged and
-        ignored, so a transient failure of the auditor does not fail an otherwise valid output.
+        Returns (field_path, reason) pairs. Schema validation only checks shape: an invented name
+        of the right type passes every constraint. This is what catches it. Errors from the audit
+        call itself are logged and ignored, so a transient failure of the auditor does not fail an
+        otherwise valid output.
         """
         extracted = json.dumps(payload, ensure_ascii=False, default=str, indent=2)
         audit_input = f"INPUT TEXT:\n{self.input_value}\n\nEXTRACTED DATA:\n{extracted}"
@@ -474,22 +574,47 @@ class JSONSchemaComponent(Component):
         if not isinstance(report, dict):
             return []
         unsupported = report.get("unsupported") or []
-        messages = [
-            f"{item.get('field') or '<root>'}: not supported by the input text - {item.get('reason', '')}".strip()
+        return [
+            (str(item.get("field") or ""), str(item.get("reason") or ""))
             for item in unsupported
             if isinstance(item, dict)
         ]
-        return self._truncate_errors(messages)
 
-    def _extract_and_validate(self) -> tuple[Any, list[str], int]:
+    @staticmethod
+    def _grounding_messages(unsupported: list[tuple[str, str]]) -> list[str]:
+        return [
+            f"{field or '<root>'}: not supported by the input text - {reason}".strip().rstrip("-").strip()
+            for field, reason in unsupported
+        ]
+
+    def _apply_grounding(self, payload: Any, unsupported: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+        """Null out every unsupported value in place. Returns (nulled_fields, unresolved_errors).
+
+        A field the auditor names but that cannot be located in the payload stays an error: the
+        component must not emit a value it was told is unsupported just because it could not find it.
+        """
+        nulled: list[str] = []
+        unresolved: list[tuple[str, str]] = []
+        for field, reason in unsupported:
+            if field and self._null_out(payload, field):
+                nulled.append(field)
+            else:
+                unresolved.append((field, reason))
+        return nulled, self._truncate_errors(self._grounding_messages(unresolved))
+
+    def _is_partial_mode(self) -> bool:
+        return str(getattr(self, "output_mode", "Strict") or "Strict").strip().lower().startswith("partial")
+
+    def _extract_and_validate(self) -> tuple[Any, list[str], int, list[str]]:
         """Extract, validate and retry with the validation errors fed back into the prompt.
 
-        Returns (payload, errors, attempts). The LLM is only called once per component run, no
-        matter how many outputs are connected, because the result is cached.
+        Returns (payload, errors, attempts, nulled_fields). The LLM is only called once per
+        component run, no matter how many outputs are connected, because the result is cached.
 
         Schema violations are retried; a model that reports it could not extract the data, and
         values that are not supported by the input, are not - retrying only invites another
-        invented answer.
+        invented answer. In Partial mode unsupported values become null instead of rejecting the
+        output, and only an output with nothing left in it is rejected.
         """
         if self._extraction_result is not None:
             return self._extraction_result
@@ -499,12 +624,17 @@ class JSONSchemaComponent(Component):
             msg = "Language model does not support structured output."
             raise TypeError(msg)
 
+        partial = self._is_partial_mode()
         schema = self._parse_json_schema()
         tool, tool_name = self._build_tool(schema)
         validation_schema = self._close_schema(schema) if getattr(self, "reject_extra_fields", True) else schema
+        if partial:
+            validation_schema = self._relax_required(validation_schema)
 
         attempts = max(int(getattr(self, "max_retries", 1) or 0), 0) + 1
         base_prompt = self.system_prompt
+        if partial:
+            base_prompt = f"{base_prompt}\n\n{PARTIAL_MODE_INSTRUCTION}"
         prompt = base_prompt
         payload: Any = None
         errors: list[str] = []
@@ -526,22 +656,36 @@ class JSONSchemaComponent(Component):
             if not succeeded:
                 detail = reason or "the input text does not contain the data the schema asks for"
                 failure = f"<root>: the model could not extract the data - {detail}"
-                self._extraction_result = (payload, [failure], attempt)
+                self._extraction_result = (payload, [failure], attempt, [])
                 return self._extraction_result
 
             if payload is None:
                 errors = ["<root>: the model reported success but returned no data."]
             else:
-                errors = self._validate_payload(payload, validation_schema)
+                errors = self._validate_payload(payload, validation_schema, partial=partial)
 
             if not errors:
+                nulled: list[str] = []
                 if getattr(self, "verify_against_input", True):
-                    errors = self._check_grounding(llm, payload)
-                    if errors:
+                    unsupported = self._check_grounding(llm, payload)
+                    if unsupported and not partial:
+                        errors = self._truncate_errors(self._grounding_messages(unsupported))
                         self.log(f"Attempt {attempt}/{attempts} produced values not supported by the input: {errors}")
-                        self._extraction_result = (payload, errors, attempt)
+                        self._extraction_result = (payload, errors, attempt, [])
                         return self._extraction_result
-                self._extraction_result = (payload, [], attempt)
+                    if unsupported:
+                        nulled, errors = self._apply_grounding(payload, unsupported)
+                        self.log(f"Attempt {attempt}/{attempts}: set to null, unsupported by the input: {nulled}")
+                        if errors:
+                            self._extraction_result = (payload, errors, attempt, nulled)
+                            return self._extraction_result
+
+                if partial and not self._has_any_value(payload):
+                    empty = "<root>: nothing in the input text supports the schema, every field would be null."
+                    self._extraction_result = (payload, [empty], attempt, nulled)
+                    return self._extraction_result
+
+                self._extraction_result = (payload, [], attempt, nulled)
                 return self._extraction_result
 
             self.log(f"Attempt {attempt}/{attempts} produced output that violates the schema: {errors}")
@@ -560,7 +704,7 @@ class JSONSchemaComponent(Component):
             msg = f"Could not get an output from the model after {attempts} attempt(s): {extraction_error}"
             raise ValueError(msg) from extraction_error
 
-        self._extraction_result = (payload, errors, attempts)
+        self._extraction_result = (payload, errors, attempts, [])
         return self._extraction_result
 
     def _deactivate_branches(self, output_names: list[str]) -> None:
@@ -592,7 +736,7 @@ class JSONSchemaComponent(Component):
 
     def build_valid_output(self) -> Data:
         """Emit the schema-conforming output, or deactivate this branch when validation failed."""
-        payload, errors, attempts = self._extract_and_validate()
+        payload, errors, attempts, nulled = self._extract_and_validate()
 
         if errors:
             self._deactivate_branches(["valid_output"])
@@ -602,12 +746,16 @@ class JSONSchemaComponent(Component):
 
         self._deactivate_branches(["invalid_output"])
         result = Data(data=self._as_data_payload(payload))
-        self.status = result
+        if nulled:
+            fields = ", ".join(nulled)
+            self.status = f"Partial output: {len(nulled)} field(s) set to null, unsupported by the input: {fields}"
+        else:
+            self.status = result
         return result
 
     def build_invalid_output(self) -> Data:
         """Emit the rejected output together with the validation errors, for downstream handling."""
-        payload, errors, attempts = self._extract_and_validate()
+        payload, errors, attempts, _nulled = self._extract_and_validate()
 
         if not errors:
             self._deactivate_branches(["invalid_output"])
